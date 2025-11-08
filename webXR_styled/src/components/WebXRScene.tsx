@@ -1,4 +1,4 @@
-import { useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
+import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -6,17 +6,6 @@ import { loadModel, type LoadedModel } from './utils/modelLoader';
 
 interface WebXRSceneProps {
   xrSession?: XRSession | null;
-  onTransformChange?: (transform: {
-    position: [number, number, number];
-    rotation: [number, number, number];
-    scale: [number, number, number];
-  }) => void;
-  initialTransform?: {
-    position?: [number, number, number];
-    rotation?: [number, number, number];
-    scale?: [number, number, number];
-  };
-  modelPath?: string;
 }
 
 /* =========================
@@ -87,21 +76,7 @@ function centerAndFitToMax(child: THREE.Object3D, targetMaxSizeMeters: number): 
 /* =========================
    Scene Component
    ========================= */
-export interface WebXRSceneRef {
-  setObjectTransform?: (
-    position?: [number, number, number],
-    rotation?: [number, number, number],
-    scale?: [number, number, number]
-  ) => void;
-  setObjectColor?: (color: string) => void;
-}
-
-export const WebXRScene = forwardRef<WebXRSceneRef, WebXRSceneProps>(({ 
-  xrSession,
-  onTransformChange,
-  initialTransform,
-  modelPath,
-}, ref) => {
+export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -233,30 +208,14 @@ export const WebXRScene = forwardRef<WebXRSceneRef, WebXRSceneProps>(({
     /* ---------- Load model (meters) ---------- */
     const loadModelMeters = async () => {
       try {
-        const modelUrl = modelPath || '../assets/objects/generated-model.stl';
-        const url = new URL(modelUrl, import.meta.url);
+        const url = new URL('../assets/objects/generated-model.stl', import.meta.url);
         const loaded = await loadModel(url.href);
 
         // STL likely in mm → convert to meters
         convertUnitsToMeters(loaded.model, 'millimeters');
 
         const container = centerAndFitToMax(loaded.model, START_MAX_SIZE_M);
-        
-        // Apply initial transform if provided
-        if (initialTransform?.position) {
-          container.position.set(...initialTransform.position);
-        } else {
-          container.position.set(0, 1.6, -1.5);
-        }
-        
-        if (initialTransform?.rotation) {
-          container.rotation.set(...initialTransform.rotation);
-        }
-        
-        if (initialTransform?.scale) {
-          container.scale.set(...initialTransform.scale);
-        }
-        
+        container.position.set(0, 1.6, -1.5);
         container.traverse((c: any) => (c.visible = true));
         scene.add(container);
 
@@ -266,15 +225,6 @@ export const WebXRScene = forwardRef<WebXRSceneRef, WebXRSceneProps>(({
         const bbox = new THREE.Box3().setFromObject(container);
         const size = bbox.getSize(new THREE.Vector3());
         initialMaxDimRef.current = Math.max(size.x, size.y, size.z);
-        
-        // Notify initial transform
-        if (onTransformChange) {
-          onTransformChange({
-            position: container.position.toArray() as [number, number, number],
-            rotation: [container.rotation.x, container.rotation.y, container.rotation.z] as [number, number, number],
-            scale: container.scale.toArray() as [number, number, number],
-          });
-        }
       } catch (e) {
         console.error('Model load failed, using cube', e);
         const cube = new THREE.Mesh(
@@ -282,37 +232,13 @@ export const WebXRScene = forwardRef<WebXRSceneRef, WebXRSceneProps>(({
           new THREE.MeshStandardMaterial({ color: 0xff0000 })
         );
         const container = centerAndFitToMax(cube, START_MAX_SIZE_M);
-        
-        // Apply initial transform if provided
-        if (initialTransform?.position) {
-          container.position.set(...initialTransform.position);
-        } else {
-          container.position.set(0, 1.6, -1.5);
-        }
-        
-        if (initialTransform?.rotation) {
-          container.rotation.set(...initialTransform.rotation);
-        }
-        
-        if (initialTransform?.scale) {
-          container.scale.set(...initialTransform.scale);
-        }
-        
+        container.position.set(0, 1.6, -1.5);
         scene.add(container);
         objectRef.current = container;
 
         const bbox = new THREE.Box3().setFromObject(container);
         const size = bbox.getSize(new THREE.Vector3());
         initialMaxDimRef.current = Math.max(size.x, size.y, size.z);
-        
-        // Notify initial transform
-        if (onTransformChange) {
-          onTransformChange({
-            position: container.position.toArray() as [number, number, number],
-            rotation: [container.rotation.x, container.rotation.y, container.rotation.z] as [number, number, number],
-            scale: container.scale.toArray() as [number, number, number],
-          });
-        }
       }
     };
     loadModelMeters();
@@ -435,15 +361,6 @@ export const WebXRScene = forwardRef<WebXRSceneRef, WebXRSceneProps>(({
           // Smooth follow
           obj.position.lerp(target, DRAG_LERP);
           obj.updateMatrixWorld(true);
-          
-          // Notify transform change
-          if (onTransformChange) {
-            onTransformChange({
-              position: obj.position.toArray() as [number, number, number],
-              rotation: [obj.rotation.x, obj.rotation.y, obj.rotation.z] as [number, number, number],
-              scale: obj.scale.toArray() as [number, number, number],
-            });
-          }
 
           // Laser visuals
           updateLaser(origin, target);
@@ -491,13 +408,6 @@ export const WebXRScene = forwardRef<WebXRSceneRef, WebXRSceneProps>(({
                 const maxS = ABS_MAX_SIZE / initMax;
                 desired = Math.min(maxS, Math.max(minS, desired));
                 setUniformScale(obj, desired);
-                if (onTransformChange) {
-                  onTransformChange({
-                    position: obj.position.toArray() as [number, number, number],
-                    rotation: [obj.rotation.x, obj.rotation.y, obj.rotation.z] as [number, number, number],
-                    scale: obj.scale.toArray() as [number, number, number],
-                  });
-                }
               }
             }
           }
@@ -520,13 +430,6 @@ export const WebXRScene = forwardRef<WebXRSceneRef, WebXRSceneProps>(({
               const pitchDelta = THREE.MathUtils.clamp(-sy * ROT_GAIN_RAD_PER_M * dt, -ROT_MAX_STEP, ROT_MAX_STEP);
               if (yawDelta)   obj.rotateOnAxis(new THREE.Vector3(0, 1, 0), yawDelta);
               if (pitchDelta) obj.rotateOnAxis(new THREE.Vector3(1, 0, 0), pitchDelta);
-              if (onTransformChange) {
-                onTransformChange({
-                  position: obj.position.toArray() as [number, number, number],
-                  rotation: [obj.rotation.x, obj.rotation.y, obj.rotation.z] as [number, number, number],
-                  scale: obj.scale.toArray() as [number, number, number],
-                });
-              }
             }
           }
         }
@@ -592,47 +495,7 @@ export const WebXRScene = forwardRef<WebXRSceneRef, WebXRSceneProps>(({
     }
   }, [xrSession]);
 
-  // Expose methods to parent via ref (for setting transform/color from overlays)
-  useImperativeHandle(ref, () => ({
-    setObjectTransform: (
-      position?: [number, number, number],
-      rotation?: [number, number, number],
-      scale?: [number, number, number]
-    ) => {
-      const obj = objectRef.current;
-      if (!obj) return;
-      if (position) obj.position.set(...position);
-      if (rotation) obj.rotation.set(...rotation);
-      if (scale) obj.scale.set(...scale);
-      obj.updateMatrixWorld(true);
-      if (onTransformChange) {
-        onTransformChange({
-          position: obj.position.toArray() as [number, number, number],
-          rotation: [obj.rotation.x, obj.rotation.y, obj.rotation.z] as [number, number, number],
-          scale: obj.scale.toArray() as [number, number, number],
-        });
-      }
-    },
-    setObjectColor: (color: string) => {
-      const obj = objectRef.current;
-      if (!obj) return;
-      obj.traverse((child: THREE.Object3D) => {
-        if (child instanceof THREE.Mesh && child.material) {
-          if (Array.isArray(child.material)) {
-            child.material.forEach((mat) => {
-              if ('color' in mat) (mat as THREE.MeshStandardMaterial).color.set(color);
-            });
-          } else if ('color' in child.material) {
-            (child.material as THREE.MeshStandardMaterial).color.set(color);
-          }
-        }
-      });
-    },
-  }), [onTransformChange]);
-
   return <div ref={mountRef} style={{ width: '100%', height: '100vh', margin: 0, padding: 0 }} />;
-});
-
-WebXRScene.displayName = 'WebXRScene';
+};
 
 export default WebXRScene;
