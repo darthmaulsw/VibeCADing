@@ -1,61 +1,74 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { supabase } from '../../lib/supabase';
 
 interface LandingScreenProps {
   onSelectMode: (mode: 'photo' | 'agentic') => void;
 }
 
 export function LandingScreen({ onSelectMode }: LandingScreenProps) {
-  const [textLines, setTextLines] = useState<string[]>([]);
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [terminalLines, setTerminalLines] = useState<string[]>([]);
+  const [currentLine, setCurrentLine] = useState('');
   const [showCursor, setShowCursor] = useState(true);
-  const [animationComplete, setAnimationComplete] = useState(false);
-
-  const fullText = [
-    '> jarvis_3d_system --init',
-    '',
-    'JARVIS 3D Modeling System v2.0',
-    'Initializing...',
-    '',
-    'Select mode:',
-    '',
-    '  [1] Create from Photo',
-    '  [2] Agentic Creation',
-    '',
-    '> _',
-  ];
+  const [isTyping, setIsTyping] = useState(false);
+  const [mode, setMode] = useState<'welcome' | 'init' | 'menu' | 'login' | 'signup' | 'authenticated'>('welcome');
+  const [username, setUsername] = useState('');
+  const [inputUsername, setInputUsername] = useState('');
+  const [inputPassword, setInputPassword] = useState('');
+  const [inputMode, setInputMode] = useState<'username' | 'password' | 'none'>('none');
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [showVimWindow, setShowVimWindow] = useState(false);
+  const [welcomeText, setWelcomeText] = useState('');
+  const typingTimeoutRef = useRef<NodeJS.Timeout>();
+  const initializedRef = useRef(false);
 
   useEffect(() => {
-    let currentLine = 0;
-    let currentChar = 0;
+    if (initializedRef.current) return;
+    initializedRef.current = true;
 
-    const typeNextChar = () => {
-      if (currentLine >= fullText.length) {
-        setAnimationComplete(true);
-        return;
-      }
+    const userId = localStorage.getItem('3d_system_user_id');
+    const storedUsername = localStorage.getItem('3d_system_username');
 
-      const line = fullText[currentLine];
+    const fullWelcome = userId && storedUsername
+      ? `Welcome back, ${storedUsername}`
+      : 'Welcome to 3D Modeling System';
 
-      if (currentChar <= line.length) {
-        setTextLines((prev) => {
-          const newLines = [...prev];
-          newLines[currentLine] = line.substring(0, currentChar);
-          return newLines;
-        });
-        currentChar++;
-
-        const delay = currentChar === line.length + 1 ? 100 : (line[currentChar - 1] === ' ' ? 30 : 50);
-        setTimeout(typeNextChar, delay);
+    let currentIndex = 0;
+    const typeWelcome = () => {
+      if (currentIndex < fullWelcome.length) {
+        setWelcomeText(fullWelcome.substring(0, currentIndex + 1));
+        currentIndex++;
+        setTimeout(typeWelcome, 50);
       } else {
-        currentLine++;
-        currentChar = 0;
-        setTextLines((prev) => [...prev, '']);
-        setTimeout(typeNextChar, 200);
+        setTimeout(() => {
+          setShowVimWindow(true);
+          setTimeout(() => {
+            if (userId && storedUsername) {
+              setUsername(storedUsername);
+              typeLines([
+                '~  3D System - Session Restored',
+                '~',
+                `~  User: ${storedUsername}`,
+                '~',
+                '~  [1] Create from Photo',
+                '~  [2] Agentic Creation',
+                '~  [3] Logout',
+                '~',
+              ], () => setMode('authenticated'));
+            } else {
+              typeLines([
+                '~  3D Modeling System v2.0',
+                '~',
+                '~  [1] Login',
+                '~  [2] Sign Up',
+                '~',
+              ], () => setMode('menu'));
+            }
+          }, 300);
+        }, 800);
       }
     };
 
-    const timer = setTimeout(typeNextChar, 500);
-    return () => clearTimeout(timer);
+    typeWelcome();
   }, []);
 
   useEffect(() => {
@@ -65,96 +78,468 @@ export function LandingScreen({ onSelectMode }: LandingScreenProps) {
     return () => clearInterval(interval);
   }, []);
 
+  const typeLines = (lines: string[], callback?: () => void) => {
+    setIsTyping(true);
+    let lineIndex = 0;
+    let charIndex = 0;
+
+    const typeNextChar = () => {
+      if (lineIndex >= lines.length) {
+        setIsTyping(false);
+        if (callback) callback();
+        return;
+      }
+
+      const line = lines[lineIndex];
+
+      if (charIndex < line.length) {
+        setCurrentLine(line.substring(0, charIndex + 1));
+        charIndex++;
+        typingTimeoutRef.current = setTimeout(typeNextChar, line[charIndex - 1] === ' ' ? 15 : 25);
+      } else {
+        setCurrentLine('');
+        setTerminalLines(prev => [...prev, line]);
+        lineIndex++;
+        charIndex = 0;
+        typingTimeoutRef.current = setTimeout(typeNextChar, 50);
+      }
+    };
+
+    typeNextChar();
+  };
+
+  const addLine = (line: string) => {
+    setTerminalLines(prev => [...prev, line]);
+  };
+
+  const hashPassword = async (password: string): Promise<string> => {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  };
+
+  const handleAuth = async () => {
+    if (!inputUsername || !inputPassword) return;
+
+    addLine(`Username: ${inputUsername}`);
+    addLine(`Password: ${'*'.repeat(inputPassword.length)}`);
+    addLine('');
+
+    if (mode === 'login') {
+      addLine('-- AUTHENTICATING --');
+    } else {
+      addLine('-- CREATING ACCOUNT --');
+    }
+
+    setInputMode('none');
+
+    try {
+      const hashedPassword = await hashPassword(inputPassword);
+
+      if (mode === 'login') {
+        const { data, error: queryError } = await supabase
+          .from('users')
+          .select('id, username, password')
+          .eq('username', inputUsername)
+          .maybeSingle();
+
+        if (queryError) throw queryError;
+        if (!data) {
+          addLine('E: Invalid username or password');
+          addLine('');
+          setInputUsername('');
+          setInputPassword('');
+          setInputMode('username');
+          return;
+        }
+
+        const passwordMatch = data.password === hashedPassword || data.password === inputPassword;
+        if (!passwordMatch) {
+          addLine('E: Invalid username or password');
+          addLine('');
+          setInputUsername('');
+          setInputPassword('');
+          setInputMode('username');
+          return;
+        }
+
+        localStorage.setItem('3d_system_user_id', data.id);
+        localStorage.setItem('3d_system_username', data.username);
+        setUsername(data.username);
+
+        typeLines([
+          '-- LOGIN SUCCESSFUL --',
+          '',
+          `~  Welcome, ${data.username}`,
+          '~',
+          '~  [1] Create from Photo',
+          '~  [2] Agentic Creation',
+          '~  [3] Logout',
+          '~',
+        ], () => setMode('authenticated'));
+
+      } else if (mode === 'signup') {
+        const { data: existing } = await supabase
+          .from('users')
+          .select('username')
+          .eq('username', inputUsername)
+          .maybeSingle();
+
+        if (existing) {
+          addLine('E: Username already exists');
+          addLine('');
+          setInputUsername('');
+          setInputPassword('');
+          setInputMode('username');
+          return;
+        }
+
+        const { data, error: insertError } = await supabase
+          .from('users')
+          .insert([{ username: inputUsername, password: hashedPassword }])
+          .select('id, username')
+          .single();
+
+        if (insertError) throw insertError;
+
+        localStorage.setItem('3d_system_user_id', data.id);
+        localStorage.setItem('3d_system_username', data.username);
+        setUsername(data.username);
+
+        typeLines([
+          '-- ACCOUNT CREATED --',
+          '',
+          `~  Welcome, ${data.username}`,
+          '~',
+          '~  [1] Create from Photo',
+          '~  [2] Agentic Creation',
+          '~  [3] Logout',
+          '~',
+        ], () => setMode('authenticated'));
+      }
+
+      setInputUsername('');
+      setInputPassword('');
+    } catch (err: any) {
+      addLine(`E: ${err.message || 'An error occurred'}`);
+      addLine('');
+      setInputUsername('');
+      setInputPassword('');
+      setInputMode('username');
+    }
+  };
+
+  const startLogin = () => {
+    setMode('login');
+    setInputMode('username');
+  };
+
+  const startSignup = () => {
+    setMode('signup');
+    setInputMode('username');
+  };
+
   useEffect(() => {
-    if (!animationComplete) return;
+    if (isTyping) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === '1') {
-        onSelectMode('photo');
-      } else if (e.key === '2') {
-        onSelectMode('agentic');
-      } else if (e.key === 'ArrowUp') {
-        setSelectedIndex(0);
-      } else if (e.key === 'ArrowDown') {
-        setSelectedIndex(1);
-      } else if (e.key === 'Enter') {
-        onSelectMode(selectedIndex === 0 ? 'photo' : 'agentic');
+      if (mode === 'menu') {
+        if (e.key === '1') {
+          setSelectedIndex(0);
+          startLogin();
+        } else if (e.key === '2') {
+          setSelectedIndex(1);
+          startSignup();
+        } else if (e.key === 'ArrowUp') {
+          setSelectedIndex(0);
+        } else if (e.key === 'ArrowDown') {
+          setSelectedIndex(1);
+        } else if (e.key === 'Enter') {
+          if (selectedIndex === 0) startLogin();
+          else startSignup();
+        }
+      } else if (mode === 'authenticated') {
+        if (e.key === '1') {
+          onSelectMode('photo');
+        } else if (e.key === '2') {
+          onSelectMode('agentic');
+        } else if (e.key === '3') {
+          handleLogout();
+        } else if (e.key === 'ArrowUp') {
+          setSelectedIndex(prev => Math.max(0, prev - 1));
+        } else if (e.key === 'ArrowDown') {
+          setSelectedIndex(prev => Math.min(2, prev + 1));
+        } else if (e.key === 'Enter') {
+          if (selectedIndex === 0) onSelectMode('photo');
+          else if (selectedIndex === 1) onSelectMode('agentic');
+          else if (selectedIndex === 2) handleLogout();
+        }
+      } else if (mode === 'login' || mode === 'signup') {
+        if (inputMode === 'username') {
+          if (e.key === 'Enter') {
+            if (inputUsername.length > 0) {
+              setInputMode('password');
+            }
+          } else if (e.key === 'Backspace') {
+            setInputUsername(prev => prev.slice(0, -1));
+          } else if (e.key.length === 1 && /^[a-zA-Z0-9_]$/.test(e.key)) {
+            setInputUsername(prev => prev + e.key);
+          }
+        } else if (inputMode === 'password') {
+          if (e.key === 'Enter') {
+            if (inputPassword.length > 0) {
+              handleAuth();
+            }
+          } else if (e.key === 'Backspace') {
+            setInputPassword(prev => prev.slice(0, -1));
+          } else if (e.key.length === 1) {
+            setInputPassword(prev => prev + e.key);
+          }
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [animationComplete, selectedIndex, onSelectMode]);
+  }, [mode, inputMode, inputUsername, inputPassword, selectedIndex, isTyping, onSelectMode]);
 
-  const handleOptionClick = (index: number) => {
-    if (!animationComplete) return;
-    setSelectedIndex(index);
-    setTimeout(() => {
-      onSelectMode(index === 0 ? 'photo' : 'agentic');
-    }, 150);
+  const getOptionLines = () => {
+    if (mode === 'menu') {
+      const lines = terminalLines;
+      const loginIndex = lines.findIndex(l => l.includes('[1] Login'));
+      const signupIndex = lines.findIndex(l => l.includes('[2] Sign Up'));
+      return [loginIndex, signupIndex];
+    } else if (mode === 'authenticated') {
+      const lines = terminalLines;
+      const photoIndex = lines.findIndex(l => l.includes('[1] Create from Photo'));
+      const agenticIndex = lines.findIndex(l => l.includes('[2] Agentic Creation'));
+      const logoutIndex = lines.findIndex(l => l.includes('[3] Logout'));
+      return [photoIndex, agenticIndex, logoutIndex];
+    }
+    return [];
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('3d_system_user_id');
+    localStorage.removeItem('3d_system_username');
+    setUsername('');
+    setTerminalLines([]);
+    setCurrentLine('');
+    setSelectedIndex(0);
+    typeLines([
+      '~  3D Modeling System v2.0',
+      '~',
+      '~  [1] Login',
+      '~  [2] Sign Up',
+      '~',
+    ], () => setMode('menu'));
+  };
+
+  const handleLineClick = (index: number) => {
+    if (isTyping) return;
+
+    const optionLines = getOptionLines();
+    if (optionLines[0] === index) {
+      setSelectedIndex(0);
+      if (mode === 'menu') startLogin();
+      else if (mode === 'authenticated') onSelectMode('photo');
+    } else if (optionLines[1] === index) {
+      setSelectedIndex(1);
+      if (mode === 'menu') startSignup();
+      else if (mode === 'authenticated') onSelectMode('agentic');
+    } else if (optionLines[2] === index) {
+      setSelectedIndex(2);
+      if (mode === 'authenticated') handleLogout();
+    }
+  };
+
+  const getLineColor = (line: string) => {
+    if (line.startsWith('~')) return '#4A90E2';
+    if (line.startsWith('E:')) return '#FF6B6B';
+    if (line.startsWith('--')) return '#50FA7B';
+    if (line.includes('[1]') || line.includes('[2]') || line.includes('[3]')) return '#FFD700';
+    if (line.startsWith('Username:') || line.startsWith('Password:')) return '#BD93F9';
+    return '#F8F8F2';
+  };
+
+  const shouldHighlight = (line: string) => {
+    return line.includes('[1]') || line.includes('[2]') || line.includes('[3]');
   };
 
   return (
-    <div className="absolute inset-0 flex items-start justify-start p-8 pointer-events-auto" style={{ background: '#000' }}>
+    <div
+      className="absolute inset-0 flex items-center justify-center pointer-events-auto"
+      style={{
+        background: '#0D0D0D',
+        fontFamily: "'Space Mono', monospace",
+      }}
+    >
+      {mode === 'welcome' && (
+        <div
+          style={{
+            fontSize: '32px',
+            color: '#4A90E2',
+            textAlign: 'center',
+            fontWeight: '600',
+            letterSpacing: '0.05em',
+          }}
+        >
+          {welcomeText}
+          <span
+            style={{
+              display: 'inline-block',
+              width: '3px',
+              height: '32px',
+              background: '#50FA7B',
+              marginLeft: '4px',
+              verticalAlign: 'middle',
+              opacity: showCursor ? 0.8 : 0,
+            }}
+          />
+        </div>
+      )}
+
+      {showVimWindow && (
+        <div
+          className="flex flex-col pointer-events-auto"
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: showVimWindow ? 'translate(-50%, -50%) scale(1)' : 'translate(-50%, -50%) scale(0.9)',
+            width: '90%',
+            maxWidth: '800px',
+            height: '80%',
+            maxHeight: '600px',
+            opacity: showVimWindow ? 1 : 0,
+            transition: 'all 0.3s ease-out',
+            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(130, 209, 255, 0.2)',
+            borderRadius: '8px',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            className="w-full px-2 py-1 flex items-center justify-between"
+            style={{
+              background: '#1A1A1A',
+              borderBottom: '1px solid #333333',
+              fontSize: '12px',
+              color: '#CCCCCC',
+            }}
+          >
+            <div className="flex items-center gap-6">
+              <span style={{ color: '#50FA7B' }}>-- INSERT --</span>
+              <span>3dsystem.vim</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <span>{terminalLines.length + 1},{(currentLine?.length || 0) + 1}</span>
+              <span>All</span>
+            </div>
+          </div>
+
       <div
-        className="w-full h-full"
+        className="flex-1 p-4 overflow-auto"
         style={{
-          fontFamily: "'Space Mono', monospace",
-          color: '#00D4FF',
           fontSize: '14px',
-          lineHeight: '1.5',
+          lineHeight: '1.6',
         }}
       >
-        {textLines.map((line, index) => {
-          const isOption1 = index === 7;
-          const isOption2 = index === 8;
-          const isSelected = (isOption1 && selectedIndex === 0) || (isOption2 && selectedIndex === 1);
-          const isClickable = (isOption1 || isOption2) && animationComplete;
-          const isCursorLine = index === textLines.length - 1;
+        {terminalLines.map((line, index) => {
+          const optionLines = getOptionLines();
+          const isOption = optionLines.includes(index);
+          const isOption1 = optionLines[0] === index;
+          const isOption2 = optionLines[1] === index;
+          const isOption3 = optionLines[2] === index;
+          const isSelected = (isOption1 && selectedIndex === 0) || (isOption2 && selectedIndex === 1) || (isOption3 && selectedIndex === 2);
+          const isClickable = isOption && !isTyping;
+          const lineColor = getLineColor(line);
+          const isHighlightable = shouldHighlight(line);
 
           return (
             <div
               key={index}
               className={isClickable ? 'cursor-pointer' : ''}
               style={{
-                background: isSelected && isClickable ? 'rgba(0, 212, 255, 0.1)' : 'transparent',
-                padding: isClickable ? '2px 4px' : '0',
-                transition: 'background 150ms',
+                color: lineColor,
+                background: isSelected && isClickable ? 'rgba(80, 250, 123, 0.15)' : isHighlightable ? 'rgba(255, 215, 0, 0.08)' : 'transparent',
+                padding: isClickable ? '2px 8px' : '2px 0',
+                transition: 'all 150ms',
+                fontWeight: isHighlightable ? '600' : '400',
               }}
-              onClick={() => isClickable && handleOptionClick(isOption1 ? 0 : 1)}
-              onMouseEnter={() => isClickable && setSelectedIndex(isOption1 ? 0 : 1)}
+              onClick={() => handleLineClick(index)}
+              onMouseEnter={() => {
+                if (isClickable) {
+                  setSelectedIndex(isOption1 ? 0 : isOption2 ? 1 : 2);
+                }
+              }}
             >
               {line}
-              {isCursorLine && !animationComplete && (
-                <span
-                  style={{
-                    display: 'inline-block',
-                    width: '8px',
-                    height: '16px',
-                    background: '#00D4FF',
-                    marginLeft: '2px',
-                    verticalAlign: 'middle',
-                    opacity: showCursor ? 1 : 0,
-                  }}
-                />
-              )}
-              {isCursorLine && animationComplete && (
-                <span
-                  style={{
-                    display: 'inline-block',
-                    width: '8px',
-                    height: '16px',
-                    background: '#00D4FF',
-                    marginLeft: '-10px',
-                    verticalAlign: 'middle',
-                    opacity: showCursor ? 1 : 0,
-                  }}
-                />
-              )}
             </div>
           );
         })}
+        {currentLine && (
+          <div style={{ color: getLineColor(currentLine) }}>
+            {currentLine}
+            <span
+              style={{
+                display: 'inline-block',
+                width: '8px',
+                height: '18px',
+                background: '#50FA7B',
+                marginLeft: '2px',
+                verticalAlign: 'middle',
+                opacity: showCursor ? 0.8 : 0,
+              }}
+            />
+          </div>
+        )}
+        {!currentLine && inputMode !== 'none' && (
+          <div style={{ color: '#BD93F9' }}>
+            {inputMode === 'username' && (
+              <>
+                <span style={{ color: '#8BE9FD' }}>Username:</span> {inputUsername}
+              </>
+            )}
+            {inputMode === 'password' && (
+              <>
+                <span style={{ color: '#8BE9FD' }}>Password:</span> {'*'.repeat(inputPassword.length)}
+              </>
+            )}
+            <span
+              style={{
+                display: 'inline-block',
+                width: '8px',
+                height: '18px',
+                background: '#50FA7B',
+                marginLeft: '2px',
+                verticalAlign: 'middle',
+                opacity: showCursor ? 0.8 : 0,
+              }}
+            />
+          </div>
+        )}
       </div>
+
+          <div
+            className="w-full px-2 py-1"
+            style={{
+              background: '#1A1A1A',
+              borderTop: '1px solid #333333',
+              fontSize: '11px',
+              color: '#888888',
+            }}
+          >
+            <div className="flex items-center gap-4">
+              <span style={{ color: '#50FA7B' }}>●</span>
+              <span>3D System</span>
+              <span>•</span>
+              <span>{mode === 'menu' ? 'Auth Menu' : mode === 'authenticated' ? 'Mode Select' : mode.charAt(0).toUpperCase() + mode.slice(1)}</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

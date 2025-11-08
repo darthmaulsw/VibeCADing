@@ -9,7 +9,7 @@ export class InteractionManager {
   private scene: THREE.Scene;
   private camera: THREE.Camera;
   private renderer: THREE.WebGLRenderer;
-  private targetObject: THREE.Object3D;
+  private cube: THREE.Mesh;
   private raycaster = new THREE.Raycaster();
   private mouse = new THREE.Vector2();
 
@@ -17,9 +17,9 @@ export class InteractionManager {
   private isDragging = false;
   private dragStart = new THREE.Vector3();
   private dragStartMouse = new THREE.Vector2();
-  private objectStartPos = new THREE.Vector3();
-  private objectStartRot = new THREE.Euler();
-  private objectStartScale = new THREE.Vector3();
+  private cubeStartPos = new THREE.Vector3();
+  private cubeStartRot = new THREE.Euler();
+  private cubeStartScale = new THREE.Vector3();
 
   private rotateOverlay: RotateOverlay;
   private moveOverlay: MoveOverlay;
@@ -38,12 +38,12 @@ export class InteractionManager {
     scene: THREE.Scene,
     camera: THREE.Camera,
     renderer: THREE.WebGLRenderer,
-    targetObject: THREE.Object3D
+    cube: THREE.Mesh
   ) {
     this.scene = scene;
     this.camera = camera;
     this.renderer = renderer;
-    this.targetObject = targetObject;
+    this.cube = cube;
 
     this.rotateOverlay = new RotateOverlay(scene);
     this.moveOverlay = new MoveOverlay(scene);
@@ -78,7 +78,7 @@ export class InteractionManager {
     }
 
     this.raycaster.setFromCamera(this.mouse, this.camera);
-    const intersects = this.raycaster.intersectObject(this.targetObject, true);
+    const intersects = this.raycaster.intersectObject(this.cube);
 
     if (intersects.length > 0) {
       if (this.mode === 'select') {
@@ -88,16 +88,16 @@ export class InteractionManager {
       this.isDragging = true;
       this.dragStart.copy(intersects[0].point);
       this.dragStartMouse.copy(this.mouse);
-      this.objectStartPos.copy(this.targetObject.position);
-      this.objectStartRot.copy(this.targetObject.rotation);
-      this.objectStartScale.copy(this.targetObject.scale);
+      this.cubeStartPos.copy(this.cube.position);
+      this.cubeStartRot.copy(this.cube.rotation);
+      this.cubeStartScale.copy(this.cube.scale);
 
       if (this.mode === 'rotate') {
-        this.rotateOverlay.show(this.targetObject.position);
+        this.rotateOverlay.show(this.cube.position);
       } else if (this.mode === 'move') {
-        this.moveOverlay.show(this.objectStartPos);
+        this.moveOverlay.show(this.cubeStartPos);
       } else if (this.mode === 'scale') {
-        this.scaleOverlay.show(this.targetObject.position, 1);
+        this.scaleOverlay.show(this.cube.position, 1);
       }
     }
   };
@@ -126,15 +126,15 @@ export class InteractionManager {
       this.raycaster.ray.intersectPlane(plane, intersection);
 
       if (intersection) {
-        this.targetObject.position.copy(intersection);
-        this.targetObject.position.y = 0.5;
-        this.moveOverlay.update(this.objectStartPos, this.targetObject.position);
+        this.cube.position.copy(intersection);
+        this.cube.position.y = 0.5;
+        this.moveOverlay.update(this.cubeStartPos, this.cube.position);
         this.onTransformChange?.();
       }
     } else if (this.mode === 'rotate') {
       const deltaX = this.mouse.x - this.dragStartMouse.x;
       const angle = deltaX * Math.PI * 2;
-      this.targetObject.rotation.y = this.objectStartRot.y + angle;
+      this.cube.rotation.y = this.cubeStartRot.y + angle;
 
       const degrees = ((angle * 180 / Math.PI) % 360 + 360) % 360;
       this.rotateOverlay.update(degrees);
@@ -142,8 +142,8 @@ export class InteractionManager {
     } else if (this.mode === 'scale') {
       const deltaY = (e.clientY / window.innerHeight) * 2 - 1;
       const scaleFactor = Math.max(0.1, 1 - deltaY);
-      this.targetObject.scale.setScalar(scaleFactor);
-      this.scaleOverlay.update(this.targetObject.position, scaleFactor);
+      this.cube.scale.setScalar(scaleFactor);
+      this.scaleOverlay.update(this.cube.position, scaleFactor);
       this.onTransformChange?.();
     }
   };
@@ -207,41 +207,28 @@ export class InteractionManager {
     return this.mode;
   }
 
-  public getObjectTransform() {
+  public getCubeTransform() {
     return {
-      position: this.targetObject.position.toArray() as [number, number, number],
-      rotation: [this.targetObject.rotation.x, this.targetObject.rotation.y, this.targetObject.rotation.z] as [number, number, number],
-      scale: this.targetObject.scale.toArray() as [number, number, number],
+      position: this.cube.position.toArray() as [number, number, number],
+      rotation: [this.cube.rotation.x, this.cube.rotation.y, this.cube.rotation.z] as [number, number, number],
+      scale: this.cube.scale.toArray() as [number, number, number],
     };
   }
 
-  public setObjectTransform(
+  public setCubeTransform(
     position?: [number, number, number],
     rotation?: [number, number, number],
     scale?: [number, number, number]
   ) {
-    if (position) this.targetObject.position.set(...position);
-    if (rotation) this.targetObject.rotation.set(...rotation);
-    if (scale) this.targetObject.scale.set(...scale);
+    if (position) this.cube.position.set(...position);
+    if (rotation) this.cube.rotation.set(...rotation);
+    if (scale) this.cube.scale.set(...scale);
   }
 
-  public setObjectColor(color: string) {
-    this.targetObject.traverse((obj: THREE.Object3D) => {
-      if ((obj as THREE.Mesh).isMesh) {
-        const mesh = obj as THREE.Mesh;
-        if (mesh.material && 'color' in mesh.material) {
-          (mesh.material as THREE.MeshStandardMaterial).color.set(color);
-        }
-      }
-    });
-  }
-
-  public setTargetObject(obj: THREE.Object3D) {
-    this.targetObject = obj;
-  }
-
-  public getTargetObject(): THREE.Object3D {
-    return this.targetObject;
+  public setCubeColor(color: string) {
+    if (this.cube.material && 'color' in this.cube.material) {
+      (this.cube.material as THREE.MeshStandardMaterial).color.set(color);
+    }
   }
 
   public update() {

@@ -50,7 +50,7 @@ function App() {
     interactionManagerRef.current = interactionManager;
 
     interactionManager.onTransformChange = () => {
-      const transform = interactionManager.getObjectTransform();
+      const transform = interactionManager.getCubeTransform();
       setPosition(transform.position);
       setRotation(transform.rotation);
       setScale(transform.scale);
@@ -107,28 +107,28 @@ function App() {
 
   const handleColorSelect = (color: string) => {
     if (interactionManagerRef.current) {
-      interactionManagerRef.current.setObjectColor(color);
+      interactionManagerRef.current.setCubeColor(color);
     }
   };
 
   const handlePositionChange = (pos: [number, number, number]) => {
     setPosition(pos);
     if (interactionManagerRef.current) {
-      interactionManagerRef.current.setObjectTransform(pos, undefined, undefined);
+      interactionManagerRef.current.setCubeTransform(pos, undefined, undefined);
     }
   };
 
   const handleRotationChange = (rot: [number, number, number]) => {
     setRotation(rot);
     if (interactionManagerRef.current) {
-      interactionManagerRef.current.setObjectTransform(undefined, rot, undefined);
+      interactionManagerRef.current.setCubeTransform(undefined, rot, undefined);
     }
   };
 
   const handleScaleChange = (scl: [number, number, number]) => {
     setScale(scl);
     if (interactionManagerRef.current) {
-      interactionManagerRef.current.setObjectTransform(undefined, undefined, scl);
+      interactionManagerRef.current.setCubeTransform(undefined, undefined, scl);
     }
   };
 
