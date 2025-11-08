@@ -2,7 +2,7 @@ import { ElevenLabsClient, play } from "@elevenlabs/elevenlabs-js";
 import { Readable } from "stream";
 import "dotenv/config";
 
-async function bufferToStream(buffer) {
+export async function bufferToStream(buffer) {
   const elevenlabs = new ElevenLabsClient();
   const audio = await elevenlabs.textToSpeech.convert("mBZBN9sY5XeDDvrbX1OK", {
     text: buffer,
@@ -25,8 +25,7 @@ async function bufferToStream(buffer) {
   return stream;
 }
 
-export { bufferToStream };
 
-// example use DELETE WHEN DONE TESTING
-  const stream = await bufferToStream("11 bombo rasclat pussy clat egg. ");
-  await play(stream);
+// // example use DELETE WHEN DONE TESTING
+//   const stream = await bufferToStream("11 bombo rasclat egg. ");
+//   await play(stream);
