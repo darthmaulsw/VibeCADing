@@ -141,6 +141,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   const menuPlaneRef = useRef<THREE.Mesh | null>(null);
   const menuCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const menuTextureRef = useRef<THREE.CanvasTexture | null>(null);
+  const menuSelectedIndexRef = useRef<number | null>(null);
 
   // Helpers
   const setUniformScale = (obj: THREE.Object3D, s: number) => {
@@ -154,13 +155,12 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   };
 
   // Render menu to canvas
-  const renderMenuToCanvas = (canvas: HTMLCanvasElement, isOpen: boolean) => {
+  const renderMenuToCanvas = (canvas: HTMLCanvasElement, isOpen: boolean, selectedIndex: number | null = null) => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    // Clear canvas
-    ctx.fillStyle = 'rgba(14, 18, 36, 0.95)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Clear canvas with transparent background
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     if (!isOpen) return;
     
@@ -175,16 +175,26 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     items.forEach((item, i) => {
       const startAngle = i * segmentAngle - Math.PI / 2;
       const endAngle = (i + 1) * segmentAngle - Math.PI / 2;
+      const isSelected = selectedIndex === i;
       
       // Draw arc segment
       ctx.beginPath();
       ctx.arc(centerX, centerY, outerRadius, startAngle, endAngle);
       ctx.arc(centerX, centerY, innerRadius, endAngle, startAngle, true);
       ctx.closePath();
-      ctx.fillStyle = 'rgba(14, 18, 36, 0.7)';
-      ctx.fill();
-      ctx.strokeStyle = '#00D4FF';
-      ctx.lineWidth = 2;
+      
+      // Highlight selected item
+      if (isSelected) {
+        ctx.fillStyle = 'rgba(130, 209, 255, 0.15)';
+        ctx.fill();
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 3;
+      } else {
+        ctx.fillStyle = 'rgba(14, 18, 36, 0.7)';
+        ctx.fill();
+        ctx.strokeStyle = '#00D4FF';
+        ctx.lineWidth = 2;
+      }
       ctx.stroke();
       
       // Draw text
@@ -193,11 +203,21 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
       const textX = centerX + Math.cos(textAngle) * textRadius;
       const textY = centerY + Math.sin(textAngle) * textRadius;
       
-      ctx.fillStyle = '#00D4FF';
-      ctx.font = 'bold 16px monospace';
+      ctx.fillStyle = isSelected ? '#FFFFFF' : '#00D4FF';
+      ctx.font = isSelected ? 'bold 18px monospace' : 'bold 16px monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
+      
+      // Add glow effect for selected item
+      if (isSelected) {
+        ctx.shadowColor = '#00D4FF';
+        ctx.shadowBlur = 10;
+      } else {
+        ctx.shadowBlur = 0;
+      }
+      
       ctx.fillText(item, textX, textY);
+      ctx.shadowBlur = 0;
     });
     
     // Draw decorative circles
@@ -313,7 +333,8 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         map: menuTexture,
         transparent: true,
         side: THREE.DoubleSide,
-        alphaTest: 0.1,
+        alphaTest: 0.01,
+        depthWrite: false,
       })
     );
     menuPlane.visible = false;
@@ -428,6 +449,8 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
       let prevRightB = false;
       let leftY = false;
       let prevLeftY = false;
+      let leftStickClick = false;
+      let prevLeftStickClick = false;
 
       controllersStateRef.current.forEach((cs) => {
         const gp = cs.gamepad;
@@ -444,6 +467,11 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           const yPressed = isYPressedLeft(gp);
           leftY = yPressed || leftY;
           prevLeftY = cs.prevButtons[5] || prevLeftY;
+          
+          // Check joystick click (button 11 is typically stick click on Quest controllers)
+          const stickClick = !!(gp.buttons?.[11]?.pressed);
+          leftStickClick = stickClick || leftStickClick;
+          prevLeftStickClick = cs.prevButtons[11] || prevLeftStickClick;
         }
         if (cs.handedness === 'right') {
           rightGrab = grab;
@@ -479,8 +507,11 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
             menuPlaneRef.current.lookAt(cameraRef.current.position);
             menuPlaneRef.current.visible = true;
             
+            // Reset selection when opening menu
+            menuSelectedIndexRef.current = null;
+            
             // Render menu to canvas and update texture
-            renderMenuToCanvas(menuCanvasRef.current, true);
+            renderMenuToCanvas(menuCanvasRef.current, true, null);
             menuTextureRef.current.needsUpdate = true;
           }
           
@@ -503,6 +534,59 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         }
       }
       
+      // Handle menu navigation with left joystick
+      if (menuOpenRef.current && leftGamepadRef.current && menuCanvasRef.current && menuTextureRef.current) {
+        const gp = leftGamepadRef.current;
+        const items = ['Select', 'Move', 'Rotate', 'Scale', 'Color', 'Subdivide', 'Material', 'Export'];
+        
+        // Get joystick input (axes 0 and 1 for left stick)
+        const stickX = gp.axes?.[0] ?? 0;
+        const stickY = gp.axes?.[1] ?? 0;
+        const stickDeadzone = 0.3;
+        
+        // Calculate angle from joystick input
+        if (Math.abs(stickX) > stickDeadzone || Math.abs(stickY) > stickDeadzone) {
+          const angle = Math.atan2(-stickY, stickX); // Negative Y because joystick Y is inverted
+          const normalizedAngle = (angle + Math.PI * 2) % (Math.PI * 2);
+          
+          // Convert angle to menu item index (menu starts at -90 degrees / top)
+          const menuStartAngle = -Math.PI / 2;
+          let itemAngle = (normalizedAngle - menuStartAngle + Math.PI * 2) % (Math.PI * 2);
+          const segmentAngle = (2 * Math.PI) / items.length;
+          let selectedIndex = Math.floor(itemAngle / segmentAngle);
+          
+          // Clamp to valid range
+          if (selectedIndex >= items.length) selectedIndex = items.length - 1;
+          if (selectedIndex < 0) selectedIndex = 0;
+          
+          if (menuSelectedIndexRef.current !== selectedIndex) {
+            menuSelectedIndexRef.current = selectedIndex;
+            renderMenuToCanvas(menuCanvasRef.current, true, selectedIndex);
+            menuTextureRef.current.needsUpdate = true;
+          }
+        }
+        
+        // Handle joystick click to select
+        if (leftStickClick && !prevLeftStickClick && menuSelectedIndexRef.current !== null) {
+          const selectedItem = items[menuSelectedIndexRef.current];
+          // Close menu and handle selection
+          menuOpenRef.current = false;
+          setMenuOpen(false);
+          if (menuPlaneRef.current) {
+            menuPlaneRef.current.visible = false;
+          }
+          
+          // Handle menu selection
+          if (selectedItem === 'Color') {
+            setColorPickerOpen(true);
+            setColorPickerPos(menuPos);
+          } else {
+            // Handle other menu items if needed
+            setColorPickerOpen(false);
+          }
+        }
+      }
+      
       // Update 3D menu position to follow controller
       if (menuOpenRef.current && menuPlaneRef.current && leftCtrlRef.current && cameraRef.current) {
         const ctrlPos = worldPos(leftCtrlRef.current);
@@ -512,12 +596,6 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         menuPlaneRef.current.position.copy(ctrlPos);
         menuPlaneRef.current.position.add(ctrlDir.multiplyScalar(menuDistance));
         menuPlaneRef.current.lookAt(cameraRef.current.position);
-        
-        // Update menu texture periodically
-        if (menuCanvasRef.current && menuTextureRef.current && Math.random() < 0.1) {
-          renderMenuToCanvas(menuCanvasRef.current, true);
-          menuTextureRef.current.needsUpdate = true;
-        }
       }
 
       const scene = sceneRef.current!;
