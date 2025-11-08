@@ -4,6 +4,7 @@ import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerM
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { loadModel, type LoadedModel } from './utils/modelLoader';
 import { ScaleOverlay } from '../three/overlays/ScaleOverlay';
+import { RotateOverlay } from '../three/overlays/RotateOverlay';
 
 interface WebXRSceneProps {
   xrSession?: XRSession | null;
@@ -120,6 +121,11 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
 
   // --- Scale overlay ---
   const scaleOverlayRef = useRef<ScaleOverlay | null>(null);
+  
+  // --- Rotate overlay ---
+  const rotateOverlayRef = useRef<RotateOverlay | null>(null);
+  const rotationStartRef = useRef<THREE.Euler | null>(null);
+  const isRotatingRef = useRef(false);
 
   // Helpers
   const setUniformScale = (obj: THREE.Object3D, s: number) => {
@@ -212,6 +218,10 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     /* ---------- Scale overlay ---------- */
     const scaleOverlay = new ScaleOverlay(scene);
     scaleOverlayRef.current = scaleOverlay;
+
+    /* ---------- Rotate overlay ---------- */
+    const rotateOverlay = new RotateOverlay(scene);
+    rotateOverlayRef.current = rotateOverlay;
 
     /* ---------- Load model (meters) ---------- */
     const loadModelMeters = async () => {
@@ -373,9 +383,14 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           // Laser visuals
           updateLaser(origin, target);
 
-          // When dragging, disable scaling state
+          // When dragging, disable scaling and rotation states
           if (scaleStateRef.current === 'active' && scaleOverlayRef.current) {
             scaleOverlayRef.current.hide();
+          }
+          if (isRotatingRef.current && rotateOverlayRef.current) {
+            rotateOverlayRef.current.hide();
+            isRotatingRef.current = false;
+            rotationStartRef.current = null;
           }
           scaleStateRef.current = 'idle';
           pendingDistanceRef.current = null;
@@ -455,18 +470,51 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
             const sy = Math.abs(axY) > STICK_DEADZONE ? axY : 0;
 
             if (sx !== 0 || sy !== 0) {
+              // Start rotation tracking if not already rotating
+              if (!isRotatingRef.current) {
+                isRotatingRef.current = true;
+                rotationStartRef.current = obj.rotation.clone();
+                
+                // Show rotate overlay
+                if (rotateOverlayRef.current) {
+                  const objPos = worldPos(obj);
+                  rotateOverlayRef.current.show(objPos);
+                }
+              }
+
               const yawDelta   = THREE.MathUtils.clamp(sx * ROT_GAIN_RAD_PER_M * dt, -ROT_MAX_STEP, ROT_MAX_STEP);
               const pitchDelta = THREE.MathUtils.clamp(-sy * ROT_GAIN_RAD_PER_M * dt, -ROT_MAX_STEP, ROT_MAX_STEP);
               if (yawDelta)   obj.rotateOnAxis(new THREE.Vector3(0, 1, 0), yawDelta);
               if (pitchDelta) obj.rotateOnAxis(new THREE.Vector3(1, 0, 0), pitchDelta);
+
+              // Update rotate overlay with total rotation
+              if (rotateOverlayRef.current && rotationStartRef.current) {
+                const totalRotation = obj.rotation.y - rotationStartRef.current.y;
+                const degrees = ((totalRotation * 180 / Math.PI) % 360 + 360) % 360;
+                rotateOverlayRef.current.update(degrees);
+              }
+            } else {
+              // Stop rotation tracking
+              if (isRotatingRef.current) {
+                isRotatingRef.current = false;
+                rotationStartRef.current = null;
+                
+                // Hide rotate overlay
+                if (rotateOverlayRef.current) {
+                  rotateOverlayRef.current.hide();
+                }
+              }
             }
           }
         }
       }
 
-      // Render scale overlay
+      // Render overlays
       if (scaleOverlayRef.current) {
         scaleOverlayRef.current.render(camera);
+      }
+      if (rotateOverlayRef.current) {
+        rotateOverlayRef.current.render(camera);
       }
 
       renderer.render(scene, camera);
@@ -502,10 +550,14 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         laserDotRef.current = null;
       }
 
-      // Dispose scale overlay
+      // Dispose overlays
       if (scaleOverlayRef.current) {
         scaleOverlayRef.current.dispose();
         scaleOverlayRef.current = null;
+      }
+      if (rotateOverlayRef.current) {
+        rotateOverlayRef.current.dispose();
+        rotateOverlayRef.current = null;
       }
 
       loadedModelsRef.current.forEach((lm) => {
