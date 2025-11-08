@@ -37,3 +37,5 @@ env/
 ENV/
 .venv/
 
+# Ignore this file to prevent merge conflicts
+.gitignore
