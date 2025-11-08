@@ -168,7 +168,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     const centerY = canvas.height / 2;
     const innerRadius = 80;
     const outerRadius = 184;
-    const items = ['Select', 'Move', 'Rotate', 'Scale', 'Color', 'Subdivide', 'Material', 'Export'];
+    const items = ['Rotate', 'Scale', 'Color'];
     const segmentAngle = (2 * Math.PI) / items.length;
     
     // Draw menu items
