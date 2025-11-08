@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { loadModel, type LoadedModel } from './utils/modelLoader';
+import { ScaleOverlay } from '../three/overlays/ScaleOverlay';
 
 interface WebXRSceneProps {
   xrSession?: XRSession | null;
@@ -117,6 +118,9 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   const laserLineRef = useRef<THREE.Line | null>(null);
   const laserDotRef = useRef<THREE.Mesh | null>(null);
 
+  // --- Scale overlay ---
+  const scaleOverlayRef = useRef<ScaleOverlay | null>(null);
+
   // Helpers
   const setUniformScale = (obj: THREE.Object3D, s: number) => {
     obj.scale.setScalar(Math.max(SCALE_MIN, Math.min(SCALE_MAX, s)));
@@ -204,6 +208,10 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     );
     refPoint.position.set(0, 1.6, -2);
     scene.add(refPoint);
+
+    /* ---------- Scale overlay ---------- */
+    const scaleOverlay = new ScaleOverlay(scene);
+    scaleOverlayRef.current = scaleOverlay;
 
     /* ---------- Load model (meters) ---------- */
     const loadModelMeters = async () => {
@@ -366,6 +374,9 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           updateLaser(origin, target);
 
           // When dragging, disable scaling state
+          if (scaleStateRef.current === 'active' && scaleOverlayRef.current) {
+            scaleOverlayRef.current.hide();
+          }
           scaleStateRef.current = 'idle';
           pendingDistanceRef.current = null;
           baseDistanceRef.current = null;
@@ -393,6 +404,13 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
                 const currentScale = getUniformScale(obj);
                 baseScaleRef.current = currentScale * (join / dist); // compensate so no jump
                 scaleStateRef.current = 'active';
+                
+                // Show scale overlay when scaling becomes active
+                if (scaleOverlayRef.current) {
+                  const objPos = worldPos(obj);
+                  const currentScaleValue = getUniformScale(obj);
+                  scaleOverlayRef.current.show(objPos, currentScaleValue);
+                }
               }
             } else if (scaleStateRef.current === 'active') {
               const baseDist = baseDistanceRef.current!;
@@ -408,11 +426,22 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
                 const maxS = ABS_MAX_SIZE / initMax;
                 desired = Math.min(maxS, Math.max(minS, desired));
                 setUniformScale(obj, desired);
+                
+                // Update scale overlay
+                if (scaleOverlayRef.current) {
+                  const objPos = worldPos(obj);
+                  scaleOverlayRef.current.update(objPos, desired);
+                }
               }
             }
           }
           /* ===== 3) RIGHT-STICK ROTATION (only when not dragging & not scaling) ===== */
           else {
+            // Hide scale overlay when scaling ends
+            if (scaleStateRef.current === 'active' && scaleOverlayRef.current) {
+              scaleOverlayRef.current.hide();
+            }
+            
             scaleStateRef.current = 'idle';
             pendingDistanceRef.current = null;
             baseDistanceRef.current = null;
@@ -433,6 +462,11 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
             }
           }
         }
+      }
+
+      // Render scale overlay
+      if (scaleOverlayRef.current) {
+        scaleOverlayRef.current.render(camera);
       }
 
       renderer.render(scene, camera);
@@ -466,6 +500,12 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         (laserDotRef.current.material as THREE.Material).dispose();
         (laserDotRef.current.geometry as THREE.BufferGeometry).dispose();
         laserDotRef.current = null;
+      }
+
+      // Dispose scale overlay
+      if (scaleOverlayRef.current) {
+        scaleOverlayRef.current.dispose();
+        scaleOverlayRef.current = null;
       }
 
       loadedModelsRef.current.forEach((lm) => {
