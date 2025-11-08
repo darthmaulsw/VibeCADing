@@ -11,17 +11,25 @@ interface WebXRSceneProps {
 /* =========================
    Tunables / Constants
    ========================= */
-const START_MAX_SIZE_M = 1.0;   // model’s largest dimension after import
+const START_MAX_SIZE_M = 1.0;   // largest dimension after import
 const SCALE_MIN = 0.05;
 const SCALE_MAX = 10;
 
-const MIN_HAND_DISTANCE = 0.05; // 5 cm floor when measuring hand distance
-const ARM_DELTA = 0.05;         // move ≥ 5 cm from initial join to arm
-const DEADZONE_METERS = 0.015;  // ignore tiny jitter
+// Two-hand scaling
+const MIN_HAND_DISTANCE = 0.05; // 5 cm floor
+const ARM_DELTA = 0.05;         // arming threshold
+const DEADZONE_METERS = 0.015;  // scale jitter deadzone
+const ABS_MIN_SIZE = 0.10;      // min object size (largest dim), meters
+const ABS_MAX_SIZE = 5.00;      // max object size (largest dim), meters
 
-// Absolute object size bounds (largest dimension), meters
-const ABS_MIN_SIZE = 0.5;      // 10 cm
-const ABS_MAX_SIZE = 25.00;      // 5 m
+// Right-stick rotation
+const STICK_DEADZONE = 0.20;    // ignore tiny stick noise (0..1)
+const ROT_GAIN_RAD_PER_M = Math.PI * 1.2; // requested
+const ROT_MAX_STEP = Math.PI / 12;        // requested
+
+// Dragging (B on right)
+const DRAG_MIN_DISTANCE = 0.05; // 5 cm: keep target in front of controller
+const DRAG_LERP = 0.35;         // smoothing to make motion pleasant
 
 /* =========================
    Unit helpers (meters-first)
@@ -41,7 +49,7 @@ function convertUnitsToMeters(object: THREE.Object3D, units: SourceUnits) {
   object.updateMatrixWorld(true);
 }
 
-/** Wrap child in a container, recenter to origin, and scale container so largest dimension == targetMaxSizeMeters. */
+/** Wrap child in a container, recenter to origin, and scale container so largest dim == targetMaxSizeMeters. */
 function centerAndFitToMax(child: THREE.Object3D, targetMaxSizeMeters: number): THREE.Group {
   const container = new THREE.Group();
   container.name = 'ModelContainer';
@@ -53,7 +61,6 @@ function centerAndFitToMax(child: THREE.Object3D, targetMaxSizeMeters: number): 
   const bboxW = new THREE.Box3().setFromObject(child);
   const sizeW = bboxW.getSize(new THREE.Vector3());
   const centerW = bboxW.getCenter(new THREE.Vector3());
-
   const centerLocal = container.worldToLocal(centerW.clone());
   child.position.sub(centerLocal);
 
@@ -70,15 +77,15 @@ function centerAndFitToMax(child: THREE.Object3D, targetMaxSizeMeters: number): 
    Scene Component
    ========================= */
 export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controllerModelFactoryRef = useRef<XRControllerModelFactory | null>(null);
   const loadedModelsRef = useRef<LoadedModel[]>([]);
 
-  // We always scale this fitted container (never the rig/camera)
-  const scalableObjectRef = useRef<THREE.Object3D | null>(null);
+  // The node we scale/rotate/drag (ALWAYS the fitted container)
+  const objectRef = useRef<THREE.Object3D | null>(null);
   const initialMaxDimRef = useRef<number>(1.0); // for absolute size clamp
 
   // Controllers
@@ -90,53 +97,107 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     handedness?: XRHandedness;
   };
   const controllersStateRef = useRef<ControllerState[]>([]);
-  const leftControllerObjRef = useRef<THREE.Object3D | null>(null);
-  const rightControllerObjRef = useRef<THREE.Object3D | null>(null);
+  const leftCtrlRef = useRef<THREE.Object3D | null>(null);
+  const rightCtrlRef = useRef<THREE.Object3D | null>(null);
+  const rightGamepadRef = useRef<Gamepad | null>(null);
 
-  // Two-hand scaling state machine
+  // --- Two-hand scaling state (idle → pending → active) ---
   type ScaleState = 'idle' | 'pending' | 'active';
   const scaleStateRef = useRef<ScaleState>('idle');
-  const pendingDistanceRef = useRef<number | null>(null); // distance when both grabs first detected
-  const baseDistanceRef = useRef<number | null>(null);     // fixed baseline used in active
-  const baseScaleRef = useRef<number | null>(null);        // compensated baseline scale (no jump)
+  const pendingDistanceRef = useRef<number | null>(null);
+  const baseDistanceRef = useRef<number | null>(null);
+  const baseScaleRef = useRef<number | null>(null);
 
+  // Right-stick timing
+  const lastTimeRef = useRef<number | null>(null);
+
+  // --- Dragging state (B on right) ---
+  const draggingRef = useRef(false);
+  const dragDistanceRef = useRef<number>(0.5); // distance along controller forward
+  const laserLineRef = useRef<THREE.Line | null>(null);
+  const laserDotRef = useRef<THREE.Mesh | null>(null);
+
+  // Helpers
   const setUniformScale = (obj: THREE.Object3D, s: number) => {
     obj.scale.setScalar(Math.max(SCALE_MIN, Math.min(SCALE_MAX, s)));
   };
   const getUniformScale = (obj: THREE.Object3D) => obj.scale.x;
+  const worldPos = (obj: THREE.Object3D) => new THREE.Vector3().setFromMatrixPosition(obj.matrixWorld);
+  const worldDir = (obj: THREE.Object3D) => {
+    const d = new THREE.Vector3(0, 0, -1);
+    return d.applyQuaternion(obj.getWorldQuaternion(new THREE.Quaternion())).normalize();
+  };
 
   // "Grab" = trigger (0) OR grip/squeeze (1)
   const isGrabPressed = (gp?: Gamepad) => !!(gp && (gp.buttons?.[0]?.pressed || gp.buttons?.[1]?.pressed));
-  const worldPos = (obj: THREE.Object3D) => new THREE.Vector3().setFromMatrixPosition(obj.matrixWorld);
+  // Right B button (xr-standard puts X/A on 4, Y/B on 5). We only treat B on right.
+  const isBPressedRight = (gp?: Gamepad) => !!(gp && gp.buttons?.[5]?.pressed);
+
+  // Laser setup/teardown
+  const ensureLaser = (scene: THREE.Scene) => {
+    if (!laserLineRef.current) {
+      const geom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+      const mat = new THREE.LineBasicMaterial({ color: 0x00ff00 });
+      const line = new THREE.Line(geom, mat);
+      line.frustumCulled = false;
+      scene.add(line);
+      laserLineRef.current = line;
+    }
+    if (!laserDotRef.current) {
+      const dot = new THREE.Mesh(
+        new THREE.SphereGeometry(0.01, 16, 16),
+        new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+      );
+      dot.frustumCulled = false;
+      scene.add(dot);
+      laserDotRef.current = dot;
+    }
+    laserLineRef.current!.visible = true;
+    laserDotRef.current!.visible = true;
+  };
+  const hideLaser = () => {
+    if (laserLineRef.current) laserLineRef.current.visible = false;
+    if (laserDotRef.current) laserDotRef.current.visible = false;
+  };
+  const updateLaser = (start: THREE.Vector3, end: THREE.Vector3) => {
+    const line = laserLineRef.current;
+    const dot = laserDotRef.current;
+    if (!line || !dot) return;
+    const posAttr = line.geometry.getAttribute('position') as THREE.BufferAttribute;
+    posAttr.setXYZ(0, start.x, start.y, start.z);
+    posAttr.setXYZ(1, end.x, end.y, end.z);
+    posAttr.needsUpdate = true;
+    dot.position.copy(end);
+  };
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!mountRef.current) return;
 
-    // Scene & camera
+    /* ---------- Scene / Camera ---------- */
     const scene = new THREE.Scene();
-    scene.background = null;
+    scene.background = null; // AR transparent
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 1.6, 0);
     cameraRef.current = camera;
 
-    // Renderer
+    /* ---------- Renderer ---------- */
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setClearColor(0x000000, 0);
     renderer.xr.enabled = true;
     rendererRef.current = renderer;
-    containerRef.current.appendChild(renderer.domElement);
+    mountRef.current.appendChild(renderer.domElement);
 
-    // Lights
+    /* ---------- Lights ---------- */
     scene.add(new THREE.AmbientLight(0xffffff, 0.5));
     const dir = new THREE.DirectionalLight(0xffffff, 0.5);
     dir.position.set(0, 10, 0);
     scene.add(dir);
 
-    // Optional reference point
+    /* ---------- Optional reference point ---------- */
     const refPoint = new THREE.Mesh(
       new THREE.SphereGeometry(0.05, 16, 16),
       new THREE.MeshBasicMaterial({ color: 0xfcba03 })
@@ -144,7 +205,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     refPoint.position.set(0, 1.6, -2);
     scene.add(refPoint);
 
-    // Load model (normalize to meters, fit to size, put in front)
+    /* ---------- Load model (meters) ---------- */
     const loadModelMeters = async () => {
       try {
         const url = new URL('../assets/objects/generated-model.stl', import.meta.url);
@@ -153,16 +214,15 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         // STL likely in mm → convert to meters
         convertUnitsToMeters(loaded.model, 'millimeters');
 
-        const containerNode = centerAndFitToMax(loaded.model, START_MAX_SIZE_M);
-        containerNode.position.set(0, 1.6, -1.5);
-        containerNode.traverse((c: any) => (c.visible = true));
-        scene.add(containerNode);
+        const container = centerAndFitToMax(loaded.model, START_MAX_SIZE_M);
+        container.position.set(0, 1.6, -1.5);
+        container.traverse((c: any) => (c.visible = true));
+        scene.add(container);
 
-        scalableObjectRef.current = containerNode;
+        objectRef.current = container;
         loadedModelsRef.current.push(loaded);
 
-        // cache initial max dimension
-        const bbox = new THREE.Box3().setFromObject(containerNode);
+        const bbox = new THREE.Box3().setFromObject(container);
         const size = bbox.getSize(new THREE.Vector3());
         initialMaxDimRef.current = Math.max(size.x, size.y, size.z);
       } catch (e) {
@@ -171,19 +231,19 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           new THREE.BoxGeometry(0.2, 0.2, 0.2),
           new THREE.MeshStandardMaterial({ color: 0xff0000 })
         );
-        const containerNode = centerAndFitToMax(cube, START_MAX_SIZE_M);
-        containerNode.position.set(0, 1.6, -1.5);
-        scene.add(containerNode);
-        scalableObjectRef.current = containerNode;
+        const container = centerAndFitToMax(cube, START_MAX_SIZE_M);
+        container.position.set(0, 1.6, -1.5);
+        scene.add(container);
+        objectRef.current = container;
 
-        const bbox = new THREE.Box3().setFromObject(containerNode);
+        const bbox = new THREE.Box3().setFromObject(container);
         const size = bbox.getSize(new THREE.Vector3());
         initialMaxDimRef.current = Math.max(size.x, size.y, size.z);
       }
     };
     loadModelMeters();
 
-    // Controller visuals
+    /* ---------- Controller visuals ---------- */
     const loader = new GLTFLoader();
     const controllerModelFactory = new XRControllerModelFactory();
     controllerModelFactory.gltfLoader = loader;
@@ -191,6 +251,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     controllerModelFactoryRef.current = controllerModelFactory;
 
     const controllers: THREE.XRTargetRaySpace[] = [];
+
     const makeController = (index: number) => {
       const c = renderer.xr.getController(index);
       const state: ControllerState = { object: c, prevButtons: [] };
@@ -206,13 +267,19 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         state.gamepad = state.inputSource?.gamepad;
         state.prevButtons = new Array(state.gamepad?.buttons?.length || 0).fill(false);
 
-        if (state.handedness === 'left') leftControllerObjRef.current = c;
-        if (state.handedness === 'right') rightControllerObjRef.current = c;
+        if (state.handedness === 'left') leftCtrlRef.current = c;
+        if (state.handedness === 'right') {
+          rightCtrlRef.current = c;
+          rightGamepadRef.current = state.gamepad ?? null;
+        }
       });
 
       c.addEventListener('disconnected', () => {
-        if (state.handedness === 'left') leftControllerObjRef.current = null;
-        if (state.handedness === 'right') rightControllerObjRef.current = null;
+        if (state.handedness === 'left') leftCtrlRef.current = null;
+        if (state.handedness === 'right') {
+          rightCtrlRef.current = null;
+          rightGamepadRef.current = null;
+        }
         state.inputSource = undefined;
         state.gamepad = undefined;
         state.prevButtons = [];
@@ -225,11 +292,18 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     makeController(0);
     makeController(1);
 
-    // Animation loop — two-hand scaling with pending→active arming (baseline compensation)
-    const animate = () => {
-      // Which hands are grabbing?
+    /* ---------- Animation loop: scaling + right-stick rotation + B-drag ---------- */
+    const animate = (time: number) => {
+      // dt in seconds
+      const dt =
+        lastTimeRef.current == null ? 0 : Math.max(0, (time - lastTimeRef.current) / 1000);
+      lastTimeRef.current = time;
+
+      // Poll controllers: determine grabs, right B, keep right gamepad fresh
       let leftGrab = false;
       let rightGrab = false;
+      let rightB = false;
+      let prevRightB = false;
 
       controllersStateRef.current.forEach((cs) => {
         const gp = cs.gamepad;
@@ -240,64 +314,124 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         }
 
         const grab = isGrabPressed(gp);
-        if (cs.handedness === 'left') leftGrab = grab;
-        if (cs.handedness === 'right') rightGrab = grab;
+        if (cs.handedness === 'left') {
+          leftGrab = grab;
+        }
+        if (cs.handedness === 'right') {
+          rightGrab = grab;
+          rightGamepadRef.current = gp; // refresh ref per frame
+          const bPressed = isBPressedRight(gp);
+          rightB = bPressed || rightB;
+          prevRightB = cs.prevButtons[5] || prevRightB;
+        }
 
         for (let i = 0; i < gp.buttons.length; i++) {
           cs.prevButtons[i] = !!gp.buttons[i]?.pressed;
         }
       });
 
-      const obj = scalableObjectRef.current;
-      const left = leftControllerObjRef.current;
-      const right = rightControllerObjRef.current;
+      const scene = sceneRef.current!;
+      const obj = objectRef.current;
+      const left = leftCtrlRef.current;
+      const right = rightCtrlRef.current;
 
       if (obj && left && right) {
-        if (leftGrab && rightGrab) {
-          const d = Math.max(
-            worldPos(left).distanceTo(worldPos(right)),
-            MIN_HAND_DISTANCE
-          );
+        /* ===== 1) DRAGGING (highest priority) ===== */
+        if (rightB) {
+          // entering drag
+          if (!draggingRef.current) {
+            draggingRef.current = true;
 
-          if (scaleStateRef.current === 'idle') {
-            // Enter pending: record initial join distance (no scaling yet)
-            scaleStateRef.current = 'pending';
-            pendingDistanceRef.current = d;
-          } else if (scaleStateRef.current === 'pending') {
-            const join = pendingDistanceRef.current ?? d;
-            if (Math.abs(d - join) >= ARM_DELTA) {
-              // We arm using the ORIGINAL join distance as our true baseline
-              // but compensate baseScale so there is NO jump at this frame:
-              // desired = baseScale * (d / baseDist) == currentScale  => baseScale = currentScale * (baseDist / d)
-              baseDistanceRef.current = join;
-              const currentScale = getUniformScale(obj);
-              baseScaleRef.current = currentScale * (join / d);
+            // Compute initial distance along controller forward to current object position
+            const ctrlPos = worldPos(right);
+            const ctrlDir = worldDir(right);
+            const toObj = worldPos(obj).sub(ctrlPos);
+            let dist = toObj.dot(ctrlDir); // signed distance along forward
+            if (!Number.isFinite(dist) || dist < DRAG_MIN_DISTANCE) dist = DRAG_MIN_DISTANCE;
+            dragDistanceRef.current = dist;
 
-              scaleStateRef.current = 'active';
-            }
-          } else if (scaleStateRef.current === 'active') {
-            const baseDist = baseDistanceRef.current!;
-            const baseScale = baseScaleRef.current!;
-            const delta = d - baseDist;
-
-            if (Math.abs(delta) > DEADZONE_METERS) {
-              let desired = baseScale * (d / baseDist); // ratio: farther => bigger, closer => smaller
-
-              // Absolute physical-size clamp
-              const initMax = Math.max(initialMaxDimRef.current, 1e-6);
-              const absMinScale = ABS_MIN_SIZE / initMax;
-              const absMaxScale = ABS_MAX_SIZE / initMax;
-              desired = Math.min(absMaxScale, Math.max(absMinScale, desired));
-
-              setUniformScale(obj, desired);
-            }
+            ensureLaser(scene);
           }
-        } else {
-          // Any hand released → reset to idle
+
+          // Update target along controller ray
+          const origin = worldPos(right);
+          const dir = worldDir(right);
+          const target = origin.clone().add(dir.multiplyScalar(Math.max(dragDistanceRef.current, DRAG_MIN_DISTANCE)));
+
+          // Smooth follow
+          obj.position.lerp(target, DRAG_LERP);
+          obj.updateMatrixWorld(true);
+
+          // Laser visuals
+          updateLaser(origin, target);
+
+          // When dragging, disable scaling state
           scaleStateRef.current = 'idle';
           pendingDistanceRef.current = null;
           baseDistanceRef.current = null;
           baseScaleRef.current = null;
+        } else {
+          // exiting drag
+          if (draggingRef.current) {
+            draggingRef.current = false;
+            hideLaser();
+          }
+
+          /* ===== 2) TWO-HAND SCALING ===== */
+          if (leftGrab && rightGrab) {
+            const pL = worldPos(left);
+            const pR = worldPos(right);
+            const dist = Math.max(pL.distanceTo(pR), MIN_HAND_DISTANCE);
+
+            if (scaleStateRef.current === 'idle') {
+              scaleStateRef.current = 'pending';
+              pendingDistanceRef.current = dist;
+            } else if (scaleStateRef.current === 'pending') {
+              const join = pendingDistanceRef.current ?? dist;
+              if (Math.abs(dist - join) >= ARM_DELTA) {
+                baseDistanceRef.current = join;
+                const currentScale = getUniformScale(obj);
+                baseScaleRef.current = currentScale * (join / dist); // compensate so no jump
+                scaleStateRef.current = 'active';
+              }
+            } else if (scaleStateRef.current === 'active') {
+              const baseDist = baseDistanceRef.current!;
+              const baseScale = baseScaleRef.current!;
+              const delta = dist - baseDist;
+
+              if (Math.abs(delta) > DEADZONE_METERS) {
+                let desired = baseScale * (dist / baseDist);
+
+                // Absolute size clamp
+                const initMax = Math.max(initialMaxDimRef.current, 1e-6);
+                const minS = ABS_MIN_SIZE / initMax;
+                const maxS = ABS_MAX_SIZE / initMax;
+                desired = Math.min(maxS, Math.max(minS, desired));
+                setUniformScale(obj, desired);
+              }
+            }
+          }
+          /* ===== 3) RIGHT-STICK ROTATION (only when not dragging & not scaling) ===== */
+          else {
+            scaleStateRef.current = 'idle';
+            pendingDistanceRef.current = null;
+            baseDistanceRef.current = null;
+            baseScaleRef.current = null;
+
+            const gp = rightGamepadRef.current;
+            const axX = gp?.axes?.[2] ?? 0; // yaw
+            const axY = gp?.axes?.[3] ?? 0; // pitch
+
+            const sx = Math.abs(axX) > STICK_DEADZONE ? axX : 0;
+            const sy = Math.abs(axY) > STICK_DEADZONE ? axY : 0;
+
+            if (sx !== 0 || sy !== 0) {
+              const yawDelta   = THREE.MathUtils.clamp(sx * ROT_GAIN_RAD_PER_M * dt, -ROT_MAX_STEP, ROT_MAX_STEP);
+              const pitchDelta = THREE.MathUtils.clamp(-sy * ROT_GAIN_RAD_PER_M * dt, -ROT_MAX_STEP, ROT_MAX_STEP);
+              if (yawDelta)   obj.rotateOnAxis(new THREE.Vector3(0, 1, 0), yawDelta);
+              if (pitchDelta) obj.rotateOnAxis(new THREE.Vector3(1, 0, 0), pitchDelta);
+            }
+          }
         }
       }
 
@@ -306,7 +440,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
 
     renderer.setAnimationLoop(animate);
 
-    // Resize
+    /* ---------- Resize ---------- */
     const onResize = () => {
       if (!cameraRef.current || !rendererRef.current) return;
       cameraRef.current.aspect = window.innerWidth / window.innerHeight;
@@ -315,10 +449,24 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     };
     window.addEventListener('resize', onResize);
 
-    // Cleanup
+    /* ---------- Cleanup ---------- */
     return () => {
       window.removeEventListener('resize', onResize);
       renderer.setAnimationLoop(null);
+
+      // remove laser from scene
+      if (laserLineRef.current) {
+        scene.remove(laserLineRef.current);
+        (laserLineRef.current.material as THREE.Material).dispose();
+        laserLineRef.current.geometry.dispose();
+        laserLineRef.current = null;
+      }
+      if (laserDotRef.current) {
+        scene.remove(laserDotRef.current);
+        (laserDotRef.current.material as THREE.Material).dispose();
+        (laserDotRef.current.geometry as THREE.BufferGeometry).dispose();
+        laserDotRef.current = null;
+      }
 
       loadedModelsRef.current.forEach((lm) => {
         scene.remove(lm.model);
@@ -332,8 +480,8 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
       });
       loadedModelsRef.current = [];
 
-      if (containerRef.current && renderer.domElement) {
-        containerRef.current.removeChild(renderer.domElement);
+      if (mountRef.current && renderer.domElement) {
+        mountRef.current.removeChild(renderer.domElement);
       }
       renderer.dispose();
     };
@@ -347,7 +495,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     }
   }, [xrSession]);
 
-  return <div ref={containerRef} style={{ width: '100%', height: '100vh', margin: 0, padding: 0 }} />;
+  return <div ref={mountRef} style={{ width: '100%', height: '100vh', margin: 0, padding: 0 }} />;
 };
 
 export default WebXRScene;
