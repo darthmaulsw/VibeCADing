@@ -325,6 +325,9 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     
     const menuTexture = new THREE.CanvasTexture(menuCanvas);
     menuTexture.needsUpdate = true;
+    // Enable texture updates
+    menuTexture.minFilter = THREE.LinearFilter;
+    menuTexture.magFilter = THREE.LinearFilter;
     menuTextureRef.current = menuTexture;
     
     const menuPlane = new THREE.Mesh(
@@ -468,10 +471,19 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           leftY = yPressed || leftY;
           prevLeftY = cs.prevButtons[5] || prevLeftY;
           
-          // Check joystick click (button 11 is typically stick click on Quest controllers)
-          const stickClick = !!(gp.buttons?.[11]?.pressed);
+          // Check joystick click - try multiple button indices
+          // Quest controllers: button 11 might be stick click, button 0 is trigger
+          let stickClick = false;
+          if (gp.buttons) {
+            if (gp.buttons[11]?.pressed) {
+              stickClick = true;
+            } else if (gp.buttons[0]?.pressed && !grab) {
+              // Use trigger as stick click if not grabbing
+              stickClick = true;
+            }
+          }
           leftStickClick = stickClick || leftStickClick;
-          prevLeftStickClick = cs.prevButtons[11] || prevLeftStickClick;
+          prevLeftStickClick = (cs.prevButtons[11] || cs.prevButtons[0]) || prevLeftStickClick;
         }
         if (cs.handedness === 'right') {
           rightGrab = grab;
@@ -539,10 +551,23 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         const gp = leftGamepadRef.current;
         const items = ['Select', 'Move', 'Rotate', 'Scale', 'Color', 'Subdivide', 'Material', 'Export'];
         
-        // Get joystick input (axes 0 and 1 for left stick)
-        const stickX = gp.axes?.[0] ?? 0;
-        const stickY = gp.axes?.[1] ?? 0;
-        const stickDeadzone = 0.3;
+        // Get joystick input - try different axis indices (Quest controllers use 2 and 3 for left stick)
+        // axes 0,1 might be thumbstick, axes 2,3 might be touchpad or different mapping
+        let stickX = 0;
+        let stickY = 0;
+        
+        // Try axes 2 and 3 first (common for Quest controllers)
+        if (gp.axes && gp.axes.length > 3) {
+          stickX = gp.axes[2] ?? 0;
+          stickY = gp.axes[3] ?? 0;
+        }
+        // Fallback to axes 0 and 1
+        if (Math.abs(stickX) < 0.1 && Math.abs(stickY) < 0.1 && gp.axes && gp.axes.length > 1) {
+          stickX = gp.axes[0] ?? 0;
+          stickY = gp.axes[1] ?? 0;
+        }
+        
+        const stickDeadzone = 0.2; // Lower deadzone for better sensitivity
         
         // Calculate angle from joystick input
         if (Math.abs(stickX) > stickDeadzone || Math.abs(stickY) > stickDeadzone) {
@@ -564,10 +589,25 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
             renderMenuToCanvas(menuCanvasRef.current, true, selectedIndex);
             menuTextureRef.current.needsUpdate = true;
           }
+        } else {
+          // If joystick is in deadzone but we have a selection, keep it visible
+          if (menuSelectedIndexRef.current !== null) {
+            renderMenuToCanvas(menuCanvasRef.current, true, menuSelectedIndexRef.current);
+            menuTextureRef.current.needsUpdate = true;
+          }
         }
         
-        // Handle joystick click to select
-        if (leftStickClick && !prevLeftStickClick && menuSelectedIndexRef.current !== null) {
+        // Handle joystick click to select - try multiple button indices
+        // Quest controllers: button 11 might be stick click, but could also be 0 (trigger) or others
+        let stickClickDetected = false;
+        if (gp.buttons) {
+          // Try button 11 (common stick click index)
+          if (gp.buttons[11]?.pressed) stickClickDetected = true;
+          // Also try button 0 (trigger) as fallback
+          else if (gp.buttons[0]?.pressed && !leftGrab) stickClickDetected = true;
+        }
+        
+        if (stickClickDetected && !prevLeftStickClick && menuSelectedIndexRef.current !== null) {
           const selectedItem = items[menuSelectedIndexRef.current];
           // Close menu and handle selection
           menuOpenRef.current = false;
@@ -596,6 +636,13 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         menuPlaneRef.current.position.copy(ctrlPos);
         menuPlaneRef.current.position.add(ctrlDir.multiplyScalar(menuDistance));
         menuPlaneRef.current.lookAt(cameraRef.current.position);
+        
+        // Continuously update menu texture to ensure it's visible
+        if (menuCanvasRef.current && menuTextureRef.current) {
+          // Re-render menu with current selection to ensure texture is up to date
+          renderMenuToCanvas(menuCanvasRef.current, true, menuSelectedIndexRef.current);
+          menuTextureRef.current.needsUpdate = true;
+        }
       }
 
       const scene = sceneRef.current!;
