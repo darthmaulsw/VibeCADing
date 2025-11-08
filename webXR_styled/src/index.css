@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-deep: #000000;
+  --panel: #0E1224;
+  --accent-a: #00D4FF;
+  --accent-b: #00D4FF;
+  --accent-c: #00D4FF;
+  --grid: rgba(0, 212, 255, 0.10);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Space Mono', monospace;
+  background: var(--bg-deep);
+  color: var(--accent-c);
+  overflow: hidden;
+}
+
+.font-title {
+  font-family: 'Space Mono', monospace;
+  font-weight: 700;
+}
+
+.font-mono {
+  font-family: 'Space Mono', monospace;
+  font-weight: 400;
+}
