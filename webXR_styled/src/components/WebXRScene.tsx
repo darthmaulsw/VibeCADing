@@ -374,15 +374,33 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   const isBPressedRight = (gp?: Gamepad) => !!(gp && gp.buttons?.[5]?.pressed);
   // Left Y button (button 5 on left controller)
   const isYPressedLeft = (gp?: Gamepad) => !!(gp && gp.buttons?.[5]?.pressed);
-  // Thumbstick click detection (button 11 or trigger as fallback)
-  const isThumbstickClick = (gp?: Gamepad) => {
+  
+  /** Safely read whether any of these button indices are pressed */
+  function anyPressed(gp: Gamepad | null | undefined, idx: number[]): boolean {
     if (!gp || !gp.buttons) return false;
-    // Try button 11 (common stick click index)
-    if (gp.buttons[11]?.pressed) return true;
-    // Also try button 0 (trigger) as fallback if not grabbing
-    if (gp.buttons[0]?.pressed && !isGrabPressed(gp)) return true;
+    for (const i of idx) if (gp.buttons[i]?.pressed) return true;
     return false;
-  };
+  }
+
+  /** xr-standard mapping on Quest: thumbstick click is typically index 3 */
+  function isThumbstickClick(gp: Gamepad | null | undefined) {
+    // Try 3 first; include a couple fallbacks seen on some runtimes
+    return anyPressed(gp, [3, 11, 9]);
+  }
+
+  /** Stick axes with fallbacks (Quest: left [0,1], right [2,3]) */
+  function readStick(gp: Gamepad | null | undefined, hand: 'left' | 'right'): { x: number; y: number } {
+    if (!gp || !gp.axes) return { x: 0, y: 0 };
+    if (hand === 'left') {
+      const x = gp.axes[0] ?? gp.axes[2] ?? 0;
+      const y = gp.axes[1] ?? gp.axes[3] ?? 0;
+      return { x, y };
+    } else {
+      const x = gp.axes[2] ?? gp.axes[0] ?? 0;
+      const y = gp.axes[3] ?? gp.axes[1] ?? 0;
+      return { x, y };
+    }
+  }
 
   // Laser setup/teardown
   const ensureLaser = (scene: THREE.Scene) => {
@@ -626,8 +644,6 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
       let prevRightB = false;
       let leftY = false;
       let prevLeftY = false;
-      let leftStickClick = false;
-      let prevLeftStickClick = false;
 
       controllersStateRef.current.forEach((cs) => {
         const gp = cs.gamepad;
@@ -640,24 +656,10 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         const grab = isGrabPressed(gp);
         if (cs.handedness === 'left') {
           leftGrab = grab;
-          leftGamepadRef.current = gp; // refresh ref per frame
+          leftGamepadRef.current = gp; // refresh each frame
           const yPressed = isYPressedLeft(gp);
           leftY = yPressed || leftY;
           prevLeftY = cs.prevButtons[5] || prevLeftY;
-          
-          // Check joystick click - try multiple button indices
-          // Quest controllers: button 11 might be stick click, button 0 is trigger
-          let stickClick = false;
-          if (gp.buttons) {
-            if (gp.buttons[11]?.pressed) {
-              stickClick = true;
-            } else if (gp.buttons[0]?.pressed && !grab) {
-              // Use trigger as stick click if not grabbing
-              stickClick = true;
-            }
-          }
-          leftStickClick = stickClick || leftStickClick;
-          prevLeftStickClick = (cs.prevButtons[11] || cs.prevButtons[0]) || prevLeftStickClick;
         }
         if (cs.handedness === 'right') {
           rightGrab = grab;
@@ -724,21 +726,8 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         const gp = leftGamepadRef.current;
         const items = ['Color', 'Rotate', 'Scale'];
         
-        // Get joystick input - try different axis indices (Quest controllers use 2 and 3 for left stick)
-        // axes 0,1 might be thumbstick, axes 2,3 might be touchpad or different mapping
-        let stickX = 0;
-        let stickY = 0;
-        
-        // Try axes 2 and 3 first (common for Quest controllers)
-        if (gp.axes && gp.axes.length > 3) {
-          stickX = gp.axes[2] ?? 0;
-          stickY = gp.axes[3] ?? 0;
-        }
-        // Fallback to axes 0 and 1
-        if (Math.abs(stickX) < 0.1 && Math.abs(stickY) < 0.1 && gp.axes && gp.axes.length > 1) {
-          stickX = gp.axes[0] ?? 0;
-          stickY = gp.axes[1] ?? 0;
-        }
+        // Get joystick input using readStick helper
+        const { x: stickX, y: stickY } = readStick(leftGamepadRef.current, 'left');
         
         const stickDeadzone = 0.1; // Lower deadzone for better sensitivity
         
@@ -831,18 +820,8 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
       if (colorPickerOpen && leftGamepadRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current) {
         const gp = leftGamepadRef.current;
         
-        // Get joystick input for hue selection
-        let stickX = 0;
-        let stickY = 0;
-        
-        if (gp.axes && gp.axes.length > 3) {
-          stickX = gp.axes[2] ?? 0;
-          stickY = gp.axes[3] ?? 0;
-        }
-        if (Math.abs(stickX) < 0.1 && Math.abs(stickY) < 0.1 && gp.axes && gp.axes.length > 1) {
-          stickX = gp.axes[0] ?? 0;
-          stickY = gp.axes[1] ?? 0;
-        }
+        // Get joystick input for hue selection using readStick helper
+        const { x: stickX, y: stickY } = readStick(leftGamepadRef.current, 'left');
         
         const stickDeadzone = 0.1;
         
@@ -876,19 +855,19 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         colorPickerTextureRef.current.needsUpdate = true;
         
         // Handle joystick click to close
-        let stickClickDetected = false;
-        if (gp.buttons) {
-          if (gp.buttons[11]?.pressed) stickClickDetected = true;
-          else if (gp.buttons[0]?.pressed && !leftGrab) stickClickDetected = true;
-        }
+        const currentStickClick = isThumbstickClick(gp);
+        const wasStickClickPressed = prevMenuStickClickRef.current;
         
-        if (stickClickDetected && !prevLeftStickClick) {
+        if (currentStickClick && !wasStickClickPressed) {
           // Close color picker
           setColorPickerOpen(false);
           if (colorPickerPlaneRef.current) {
             colorPickerPlaneRef.current.visible = false;
           }
         }
+        
+        // Update previous stick click state for next frame
+        prevMenuStickClickRef.current = currentStickClick;
       }
       
       // Update 3D color picker position to follow controller
@@ -1034,9 +1013,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
             baseDistanceRef.current = null;
             baseScaleRef.current = null;
 
-            const gp = rightGamepadRef.current;
-            const axX = gp?.axes?.[2] ?? 0; // yaw
-            const axY = gp?.axes?.[3] ?? 0; // pitch
+            const { x: axX, y: axY } = readStick(rightGamepadRef.current, 'right');
 
             const sx = Math.abs(axX) > STICK_DEADZONE ? axX : 0;
             const sy = Math.abs(axY) > STICK_DEADZONE ? axY : 0;
