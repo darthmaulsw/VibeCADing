@@ -378,20 +378,12 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   // Left Y button (button 5 on left controller)
   const isYPressedLeft = (gp?: Gamepad) => !!(gp && gp.buttons?.[5]?.pressed);
   
-  /** Safely read whether any of these button indices are pressed */
   function anyPressed(gp: Gamepad | null | undefined, idx: number[]): boolean {
     if (!gp || !gp.buttons) return false;
     for (const i of idx) if (gp.buttons[i]?.pressed) return true;
     return false;
   }
 
-  /** xr-standard mapping on Quest: thumbstick click is typically index 3 */
-  function isThumbstickClick(gp: Gamepad | null | undefined) {
-    // Try 3 first; include a couple fallbacks seen on some runtimes
-    return anyPressed(gp, [3, 11, 9]);
-  }
-
-  /** Stick axes with fallbacks (Quest: left [0,1], right [2,3]) */
   function readStick(gp: Gamepad | null | undefined, hand: 'left' | 'right'): { x: number; y: number } {
     if (!gp || !gp.axes) return { x: 0, y: 0 };
     if (hand === 'left') {
@@ -403,6 +395,10 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
       const y = gp.axes[3] ?? gp.axes[1] ?? 0;
       return { x, y };
     }
+  }
+
+  function isThumbstickClick(gp: Gamepad | null | undefined) {
+    return anyPressed(gp, [3, 11, 9]); // 3 is standard; 11/9 are fallbacks seen on some runtimes
   }
 
   // Laser setup/teardown
@@ -727,78 +723,69 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
       // Handle menu navigation with left joystick
       if (menuOpenRef.current && leftGamepadRef.current && menuCanvasRef.current && menuTextureRef.current) {
         const gp = leftGamepadRef.current;
+
+        // Keep the same order you want on the wheel. Index 0 will be the TOP wedge.
         const items = MENU_ITEMS;
-        
-        // Get joystick input using readStick helper
-        const { x: stickX, y: stickY } = readStick(leftGamepadRef.current, 'left');
-        
-        const stickDeadzone = 0.1; // Lower deadzone for better sensitivity
-        
-        // Calculate angle from joystick input
-        if (Math.abs(stickX) > stickDeadzone || Math.abs(stickY) > stickDeadzone) {
-          // Calculate angle from joystick
-          // Joystick coordinates: right=+X, up=-Y (inverted Y in gamepad API)
-          // We need to account for the coordinate system difference
-          const angle = Math.atan2(stickX, -stickY); // Standard atan2
-          // Rotate by 180 degrees to fix the inversion
-          const rotatedAngle = (angle + Math.PI) % (Math.PI * 2);
-          const normalizedAngle = (rotatedAngle + Math.PI * 2) % (Math.PI * 2);
-          
-          // Convert angle to menu item index (menu starts at -90 degrees / top)
-          // Menu items are arranged clockwise starting from top (index 0 = Select at top)
-          const menuStartAngle = -Math.PI / 2; // Top position
-          let itemAngle = (normalizedAngle - menuStartAngle + Math.PI * 2) % (Math.PI * 2);
+
+        // Read left stick robustly
+        const { x: lx, y: ly } = readStick(gp, 'left');
+
+        // Radial deadzone to ignore tiny drift
+        const radialDeadzone = 0.15;
+        const mag = Math.hypot(lx, ly);
+
+        if (mag > radialDeadzone) {
+          // Angle in radians: right = 0, up = -PI/2, CCW positive
+          const angle = Math.atan2(-ly, lx);
+
+          // We want index 0 at the top; top is -PI/2 in this frame
+          const menuStartAngle = -Math.PI / 2;
+
+          // Shift so 0 is top; wrap to [0, 2PI)
+          let a = angle - menuStartAngle;
+          a = (a % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+
+          // Slice the circle into N equal wedges
           const segmentAngle = (2 * Math.PI) / items.length;
-          let selectedIndex = Math.floor(itemAngle / segmentAngle);
-          
-          // Clamp to valid range
+          let selectedIndex = Math.floor(a / segmentAngle);
           if (selectedIndex >= items.length) selectedIndex = items.length - 1;
-          if (selectedIndex < 0) selectedIndex = 0;
-          
+
+          // Update highlight if changed
           if (menuSelectedIndexRef.current !== selectedIndex) {
             menuSelectedIndexRef.current = selectedIndex;
             renderMenuToCanvas(menuCanvasRef.current, true, selectedIndex);
             menuTextureRef.current.needsUpdate = true;
           }
         } else {
-          // If joystick is in deadzone but we have a selection, keep it visible
-          if (menuSelectedIndexRef.current !== null && menuSelectedIndexRef.current >= 0) {
-            // Keep rendering the menu with current selection
+          // Stick centered: keep current highlight visible
+          if (menuSelectedIndexRef.current != null) {
             renderMenuToCanvas(menuCanvasRef.current, true, menuSelectedIndexRef.current);
             menuTextureRef.current.needsUpdate = true;
           }
         }
-        
-        // Always update menu texture to ensure it's visible (even when joystick is in deadzone)
-        if (menuSelectedIndexRef.current !== null && menuSelectedIndexRef.current >= 0) {
-          renderMenuToCanvas(menuCanvasRef.current, true, menuSelectedIndexRef.current);
-          menuTextureRef.current.needsUpdate = true;
-        }
-        
-        // Handle joystick click to select
-        const currentStickClick = isThumbstickClick(gp);
-        
-        if (currentStickClick && !prevMenuStickClickRef.current && menuSelectedIndexRef.current != null && menuSelectedIndexRef.current >= 0) {
+
+        // Stick click to select (use standard thumbstick-click indices)
+        const clickNow = isThumbstickClick(gp);
+        if (clickNow && !prevMenuStickClickRef.current && menuSelectedIndexRef.current != null) {
           const selectedItem = items[menuSelectedIndexRef.current];
-          
-          // Close menu plane
+
+          // Close menu
           menuOpenRef.current = false;
           if (menuPlaneRef.current) menuPlaneRef.current.visible = false;
-          
+
           if (selectedItem === 'Color') {
-            // Show color picker plane
+            // Open color picker plane in AR (unchanged from your code)
             if (colorPickerPlaneRef.current && leftCtrlRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current && cameraRef.current) {
               const ctrlPos = worldPos(leftCtrlRef.current);
               const ctrlDir = worldDir(leftCtrlRef.current);
               const pickerDistance = 0.4;
-              
+
               colorPickerPlaneRef.current.position.copy(ctrlPos);
               colorPickerPlaneRef.current.position.add(ctrlDir.multiplyScalar(pickerDistance));
               colorPickerPlaneRef.current.lookAt(cameraRef.current.position);
               colorPickerPlaneRef.current.visible = true;
-              
+
               colorPickerStateRef.current = { hue: 200, saturation: 80, lightness: 60, rotation: 0 };
-              
               renderColorPickerToCanvas(
                 colorPickerCanvasRef.current,
                 true,
@@ -811,18 +798,17 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
             }
             setColorPickerOpen(true);
             setColorPickerPos(menuPosRef.current);
-          } else if (selectedItem === 'Rotate') {
-            // Optional: prime rotate overlay or state if you want
+          } else {
+            // Close color picker if opened
             setColorPickerOpen(false);
-          } else if (selectedItem === 'Scale') {
-            setColorPickerOpen(false);
+            if (colorPickerPlaneRef.current) colorPickerPlaneRef.current.visible = false;
+            // (Optional) you can prime Rotate/Scale overlays here
           }
         }
-        
-        // Update edge detector once per frame
-        prevMenuStickClickRef.current = currentStickClick;
+        // edge detector
+        prevMenuStickClickRef.current = clickNow;
       } else {
-        // Menu closed
+        // menu closed → keep edge detector in sync so next click edges cleanly
         prevMenuStickClickRef.current = isThumbstickClick(leftGamepadRef.current ?? undefined);
       }
       
