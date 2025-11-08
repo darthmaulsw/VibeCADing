@@ -140,6 +140,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   const menuCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const menuTextureRef = useRef<THREE.CanvasTexture | null>(null);
   const menuSelectedIndexRef = useRef<number | null>(null);
+  const prevMenuStickClickRef = useRef<boolean>(false);
   
   // --- 3D Color Picker in AR ---
   const colorPickerPlaneRef = useRef<THREE.Mesh | null>(null);
@@ -682,11 +683,11 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
             menuPlaneRef.current.lookAt(cameraRef.current.position);
             menuPlaneRef.current.visible = true;
             
-            // Reset selection when opening menu
-            menuSelectedIndexRef.current = null;
+            // Set default selection to first item when opening menu
+            menuSelectedIndexRef.current = 0;
             
             // Render menu to canvas and update texture
-            renderMenuToCanvas(menuCanvasRef.current, true, null);
+            renderMenuToCanvas(menuCanvasRef.current, true, 0);
             menuTextureRef.current.needsUpdate = true;
           }
           
@@ -760,7 +761,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           }
         } else {
           // If joystick is in deadzone but we have a selection, keep it visible
-          if (menuSelectedIndexRef.current !== null) {
+          if (menuSelectedIndexRef.current !== null && menuSelectedIndexRef.current >= 0) {
             renderMenuToCanvas(menuCanvasRef.current, true, menuSelectedIndexRef.current);
             menuTextureRef.current.needsUpdate = true;
           }
@@ -776,7 +777,11 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           else if (gp.buttons[0]?.pressed && !leftGrab) stickClickDetected = true;
         }
         
-        if (stickClickDetected && !prevLeftStickClick && menuSelectedIndexRef.current !== null) {
+        // Check for joystick click - use ref to track previous state across frames
+        const currentStickClick = stickClickDetected;
+        const wasStickClickPressed = prevMenuStickClickRef.current;
+        
+        if (currentStickClick && !wasStickClickPressed && menuSelectedIndexRef.current !== null && menuSelectedIndexRef.current >= 0) {
           const selectedItem = items[menuSelectedIndexRef.current];
           // Close menu and handle selection
           menuOpenRef.current = false;
@@ -818,6 +823,12 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
             setColorPickerOpen(false);
           }
         }
+        
+        // Update previous stick click state for next frame
+        prevMenuStickClickRef.current = currentStickClick;
+      } else {
+        // Reset previous stick click state when menu is closed
+        prevMenuStickClickRef.current = false;
       }
       
       // Handle color picker interaction
