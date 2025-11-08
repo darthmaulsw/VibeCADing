@@ -4,8 +4,9 @@ export class RotateOverlay {
   private scene: THREE.Scene;
   private group = new THREE.Group();
   private isVisible = false;
-  private ringRadius = 1.2;
+  private ringRadius = 0.15; // Reduced by 75% (was 1.2, now 0.3)
   private spinSpeed = 0.015;
+  private baseScale = 1.0;
 
   private ring: THREE.Line;
   private ticks: THREE.Line[] = [];
@@ -106,10 +107,12 @@ export class RotateOverlay {
     return label;
   }
 
-  public show(position: THREE.Vector3) {
+  public show(position: THREE.Vector3, scale: number = 1.0) {
     this.isVisible = true;
     this.group.visible = true;
     this.group.position.copy(position);
+    this.baseScale = scale;
+    this.group.scale.setScalar(scale);
     this.label.style.display = 'block';
   }
 
@@ -121,8 +124,15 @@ export class RotateOverlay {
     }, 900);
   }
 
-  public update(degrees: number) {
+  public update(degrees: number, position?: THREE.Vector3, scale?: number) {
     if (!this.isVisible) return;
+
+    if (position) {
+      this.group.position.copy(position);
+    }
+    if (scale !== undefined) {
+      this.group.scale.setScalar(scale);
+    }
 
     const points: THREE.Vector3[] = [];
     const segments = 60;
