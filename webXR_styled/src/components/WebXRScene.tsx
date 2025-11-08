@@ -5,7 +5,6 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { loadModel, type LoadedModel } from './utils/modelLoader';
 import { ScaleOverlay } from '../three/overlays/ScaleOverlay';
 import { RotateOverlay } from '../three/overlays/RotateOverlay';
-import { RadialMenu } from './editor/RadialMenu';
 import { ColorPicker } from './ui/ColorPicker';
 
 interface WebXRSceneProps {
@@ -131,17 +130,23 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   const isRotatingRef = useRef(false);
 
   // --- UI State ---
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const [colorPickerPos, setColorPickerPos] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   const menuOpenRef = useRef(false);
+  const menuPosRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   
   // --- 3D Menu in AR ---
   const menuPlaneRef = useRef<THREE.Mesh | null>(null);
   const menuCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const menuTextureRef = useRef<THREE.CanvasTexture | null>(null);
   const menuSelectedIndexRef = useRef<number | null>(null);
+  const prevMenuStickClickRef = useRef<boolean>(false);
+  
+  // --- 3D Color Picker in AR ---
+  const colorPickerPlaneRef = useRef<THREE.Mesh | null>(null);
+  const colorPickerCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const colorPickerTextureRef = useRef<THREE.CanvasTexture | null>(null);
+  const colorPickerStateRef = useRef({ hue: 200, saturation: 80, lightness: 60, rotation: 0 });
 
   // Helpers
   const setUniformScale = (obj: THREE.Object3D, s: number) => {
@@ -168,7 +173,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     const centerY = canvas.height / 2;
     const innerRadius = 80;
     const outerRadius = 184;
-    const items = ['Rotate', 'Scale', 'Color'];
+    const items = ['Rotate', 'Color'];
     const segmentAngle = (2 * Math.PI) / items.length;
     
     // Draw menu items
@@ -227,6 +232,139 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     ctx.beginPath();
     ctx.arc(centerX, centerY, outerRadius + 20, 0, 2 * Math.PI);
     ctx.stroke();
+    ctx.globalAlpha = 1.0;
+  };
+
+  // Render color picker to canvas
+  const renderColorPickerToCanvas = (
+    canvas: HTMLCanvasElement,
+    isOpen: boolean,
+    hue: number,
+    saturation: number,
+    lightness: number,
+    rotation: number
+  ) => {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Clear canvas with transparent background
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    if (!isOpen) return;
+    
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    const radius = 140;
+    const spectrumSegments = 36;
+    const innerR = 62;
+    const outerR = 90;
+    
+    // Draw decorative rotating circles
+    ctx.save();
+    ctx.translate(centerX, centerY);
+    ctx.rotate((rotation * Math.PI) / 180);
+    ctx.strokeStyle = 'rgba(0, 212, 255, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 10]);
+    ctx.beginPath();
+    ctx.arc(0, 0, radius - 10, 0, 2 * Math.PI);
+    ctx.stroke();
+    ctx.restore();
+    
+    ctx.save();
+    ctx.translate(centerX, centerY);
+    ctx.rotate((-rotation * 1.5 * Math.PI) / 180);
+    ctx.strokeStyle = 'rgba(0, 212, 255, 0.2)';
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([3, 6]);
+    ctx.beginPath();
+    ctx.arc(0, 0, radius - 25, 0, 2 * Math.PI);
+    ctx.stroke();
+    ctx.restore();
+    
+    // Draw decorative lines
+    ctx.strokeStyle = 'rgba(0, 212, 255, 0.15)';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < spectrumSegments; i++) {
+      const angle = (i / spectrumSegments) * 360;
+      const rad = (angle * Math.PI) / 180;
+      const x1 = centerX + Math.cos(rad) * 35;
+      const y1 = centerY + Math.sin(rad) * 35;
+      const x2 = centerX + Math.cos(rad) * 90;
+      const y2 = centerY + Math.sin(rad) * 90;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+    
+    // Draw color spectrum segments
+    for (let i = 0; i < spectrumSegments; i++) {
+      const segmentHue = (i / spectrumSegments) * 360;
+      const startAngle = ((i / spectrumSegments) * 360 - 90) * (Math.PI / 180);
+      const endAngle = (((i + 1) / spectrumSegments) * 360 - 90) * (Math.PI / 180);
+      
+      const x1 = centerX + Math.cos(startAngle) * innerR;
+      const y1 = centerY + Math.sin(startAngle) * innerR;
+      const x2 = centerX + Math.cos(startAngle) * outerR;
+      const y2 = centerY + Math.sin(startAngle) * outerR;
+      const x4 = centerX + Math.cos(endAngle) * innerR;
+      const y4 = centerY + Math.sin(endAngle) * innerR;
+      
+      const color = `hsl(${segmentHue}, 80%, 60%)`;
+      const isSelected = Math.abs(hue - segmentHue) < 10;
+      
+      // Draw segment
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.arc(centerX, centerY, outerR, startAngle, endAngle);
+      ctx.lineTo(x4, y4);
+      ctx.arc(centerX, centerY, innerR, endAngle, startAngle, true);
+      ctx.closePath();
+      
+      // Fill with color
+      ctx.fillStyle = color;
+      ctx.fill();
+      
+      // Stroke
+      if (isSelected) {
+        ctx.strokeStyle = '#00D4FF';
+        ctx.lineWidth = 2;
+      } else {
+        ctx.strokeStyle = 'rgba(130, 209, 255, 0.2)';
+        ctx.lineWidth = 0.5;
+      }
+      ctx.stroke();
+    }
+    
+    // Draw center button
+    const centerColor = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+    ctx.fillStyle = centerColor;
+    ctx.strokeStyle = 'rgba(130, 209, 255, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, 32, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.stroke();
+    
+    // Draw X in center
+    ctx.strokeStyle = lightness > 50 ? '#0E1224' : '#00D4FF';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(centerX - 8, centerY - 8);
+    ctx.lineTo(centerX + 8, centerY + 8);
+    ctx.moveTo(centerX + 8, centerY - 8);
+    ctx.lineTo(centerX - 8, centerY + 8);
+    ctx.stroke();
+    
+    // Draw label
+    ctx.fillStyle = '#00D4FF';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.globalAlpha = 0.5;
+    ctx.fillText('COLOR SPECTRUM', centerX, centerY + radius + 8);
     ctx.globalAlpha = 1.0;
   };
 
@@ -344,6 +482,33 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     menuPlane.name = 'MenuPlane';
     scene.add(menuPlane);
     menuPlaneRef.current = menuPlane;
+
+    /* ---------- 3D Color Picker Plane for AR ---------- */
+    const colorPickerCanvas = document.createElement('canvas');
+    colorPickerCanvas.width = 600;
+    colorPickerCanvas.height = 600;
+    colorPickerCanvasRef.current = colorPickerCanvas;
+    
+    const colorPickerTexture = new THREE.CanvasTexture(colorPickerCanvas);
+    colorPickerTexture.needsUpdate = true;
+    colorPickerTexture.minFilter = THREE.LinearFilter;
+    colorPickerTexture.magFilter = THREE.LinearFilter;
+    colorPickerTextureRef.current = colorPickerTexture;
+    
+    const colorPickerPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.6, 0.6),
+      new THREE.MeshBasicMaterial({
+        map: colorPickerTexture,
+        transparent: true,
+        side: THREE.DoubleSide,
+        alphaTest: 0.01,
+        depthWrite: false,
+      })
+    );
+    colorPickerPlane.visible = false;
+    colorPickerPlane.name = 'ColorPickerPlane';
+    scene.add(colorPickerPlane);
+    colorPickerPlaneRef.current = colorPickerPlane;
 
     /* ---------- Load model (meters) ---------- */
     const loadModelMeters = async () => {
@@ -503,7 +668,6 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         // Toggle menu
         const newMenuOpen = !menuOpenRef.current;
         menuOpenRef.current = newMenuOpen;
-        setMenuOpen(newMenuOpen);
         
         if (newMenuOpen) {
           // Position 3D menu in front of controller
@@ -519,15 +683,15 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
             menuPlaneRef.current.lookAt(cameraRef.current.position);
             menuPlaneRef.current.visible = true;
             
-            // Reset selection when opening menu
-            menuSelectedIndexRef.current = null;
+            // Set default selection to first item when opening menu
+            menuSelectedIndexRef.current = 0;
             
             // Render menu to canvas and update texture
-            renderMenuToCanvas(menuCanvasRef.current, true, null);
+            renderMenuToCanvas(menuCanvasRef.current, true, 0);
             menuTextureRef.current.needsUpdate = true;
           }
           
-          // Project controller position to screen coordinates (for 2D fallback)
+          // Project controller position to screen coordinates (for color picker positioning)
           const ctrlPos = worldPos(leftCtrlRef.current);
           const vector = new THREE.Vector3();
           vector.copy(ctrlPos);
@@ -535,7 +699,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           
           const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
           const y = (-(vector.y * 0.5) + 0.5) * window.innerHeight;
-          setMenuPos({ x, y });
+          menuPosRef.current = { x, y };
         } else {
           // Hide 3D menu
           if (menuPlaneRef.current) {
@@ -597,7 +761,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           }
         } else {
           // If joystick is in deadzone but we have a selection, keep it visible
-          if (menuSelectedIndexRef.current !== null) {
+          if (menuSelectedIndexRef.current !== null && menuSelectedIndexRef.current >= 0) {
             renderMenuToCanvas(menuCanvasRef.current, true, menuSelectedIndexRef.current);
             menuTextureRef.current.needsUpdate = true;
           }
@@ -613,24 +777,133 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           else if (gp.buttons[0]?.pressed && !leftGrab) stickClickDetected = true;
         }
         
-        if (stickClickDetected && !prevLeftStickClick && menuSelectedIndexRef.current !== null) {
+        // Check for joystick click - use ref to track previous state across frames
+        const currentStickClick = stickClickDetected;
+        const wasStickClickPressed = prevMenuStickClickRef.current;
+        
+        if (currentStickClick && !wasStickClickPressed && menuSelectedIndexRef.current !== null && menuSelectedIndexRef.current >= 0) {
           const selectedItem = items[menuSelectedIndexRef.current];
           // Close menu and handle selection
           menuOpenRef.current = false;
-          setMenuOpen(false);
           if (menuPlaneRef.current) {
             menuPlaneRef.current.visible = false;
           }
           
           // Handle menu selection
           if (selectedItem === 'Color') {
+            // Open color picker in AR
+            if (colorPickerPlaneRef.current && leftCtrlRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current && cameraRef.current) {
+              const ctrlPos = worldPos(leftCtrlRef.current);
+              const ctrlDir = worldDir(leftCtrlRef.current);
+              const pickerDistance = 0.4;
+              
+              colorPickerPlaneRef.current.position.copy(ctrlPos);
+              colorPickerPlaneRef.current.position.add(ctrlDir.multiplyScalar(pickerDistance));
+              colorPickerPlaneRef.current.lookAt(cameraRef.current.position);
+              colorPickerPlaneRef.current.visible = true;
+              
+              // Reset color picker state
+              colorPickerStateRef.current = { hue: 200, saturation: 80, lightness: 60, rotation: 0 };
+              
+              // Render initial color picker
+              renderColorPickerToCanvas(
+                colorPickerCanvasRef.current,
+                true,
+                colorPickerStateRef.current.hue,
+                colorPickerStateRef.current.saturation,
+                colorPickerStateRef.current.lightness,
+                colorPickerStateRef.current.rotation
+              );
+              colorPickerTextureRef.current.needsUpdate = true;
+            }
             setColorPickerOpen(true);
-            setColorPickerPos(menuPos);
+            setColorPickerPos(menuPosRef.current);
           } else {
             // Handle other menu items if needed
             setColorPickerOpen(false);
           }
         }
+        
+        // Update previous stick click state for next frame
+        prevMenuStickClickRef.current = currentStickClick;
+      } else {
+        // Reset previous stick click state when menu is closed
+        prevMenuStickClickRef.current = false;
+      }
+      
+      // Handle color picker interaction
+      if (colorPickerOpen && leftGamepadRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current) {
+        const gp = leftGamepadRef.current;
+        
+        // Get joystick input for hue selection
+        let stickX = 0;
+        let stickY = 0;
+        
+        if (gp.axes && gp.axes.length > 3) {
+          stickX = gp.axes[2] ?? 0;
+          stickY = gp.axes[3] ?? 0;
+        }
+        if (Math.abs(stickX) < 0.1 && Math.abs(stickY) < 0.1 && gp.axes && gp.axes.length > 1) {
+          stickX = gp.axes[0] ?? 0;
+          stickY = gp.axes[1] ?? 0;
+        }
+        
+        const stickDeadzone = 0.1;
+        
+        // Update hue based on joystick angle
+        if (Math.abs(stickX) > stickDeadzone || Math.abs(stickY) > stickDeadzone) {
+          const angle = Math.atan2(stickX, -stickY);
+          const normalizedAngle = (angle + Math.PI * 2) % (Math.PI * 2);
+          const newHue = Math.floor((normalizedAngle / (Math.PI * 2)) * 360);
+          
+          if (Math.abs(colorPickerStateRef.current.hue - newHue) > 5) {
+            colorPickerStateRef.current.hue = newHue;
+            
+            // Update color immediately
+            const color = `hsl(${colorPickerStateRef.current.hue}, ${colorPickerStateRef.current.saturation}%, ${colorPickerStateRef.current.lightness}%)`;
+            handleColorSelect(color);
+          }
+        }
+        
+        // Update rotation for animation
+        colorPickerStateRef.current.rotation = (colorPickerStateRef.current.rotation + 0.4) % 360;
+        
+        // Continuously update color picker texture
+        renderColorPickerToCanvas(
+          colorPickerCanvasRef.current,
+          true,
+          colorPickerStateRef.current.hue,
+          colorPickerStateRef.current.saturation,
+          colorPickerStateRef.current.lightness,
+          colorPickerStateRef.current.rotation
+        );
+        colorPickerTextureRef.current.needsUpdate = true;
+        
+        // Handle joystick click to close
+        let stickClickDetected = false;
+        if (gp.buttons) {
+          if (gp.buttons[11]?.pressed) stickClickDetected = true;
+          else if (gp.buttons[0]?.pressed && !leftGrab) stickClickDetected = true;
+        }
+        
+        if (stickClickDetected && !prevLeftStickClick) {
+          // Close color picker
+          setColorPickerOpen(false);
+          if (colorPickerPlaneRef.current) {
+            colorPickerPlaneRef.current.visible = false;
+          }
+        }
+      }
+      
+      // Update 3D color picker position to follow controller
+      if (colorPickerOpen && colorPickerPlaneRef.current && leftCtrlRef.current && cameraRef.current) {
+        const ctrlPos = worldPos(leftCtrlRef.current);
+        const ctrlDir = worldDir(leftCtrlRef.current);
+        const pickerDistance = 0.4;
+        
+        colorPickerPlaneRef.current.position.copy(ctrlPos);
+        colorPickerPlaneRef.current.position.add(ctrlDir.multiplyScalar(pickerDistance));
+        colorPickerPlaneRef.current.lookAt(cameraRef.current.position);
       }
       
       // Update 3D menu position to follow controller
@@ -879,6 +1152,20 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         menuTextureRef.current.dispose();
         menuTextureRef.current = null;
       }
+      
+      // Dispose color picker plane
+      if (colorPickerPlaneRef.current) {
+        scene.remove(colorPickerPlaneRef.current);
+        if (colorPickerPlaneRef.current.material instanceof THREE.Material) {
+          colorPickerPlaneRef.current.material.dispose();
+        }
+        colorPickerPlaneRef.current.geometry.dispose();
+        colorPickerPlaneRef.current = null;
+      }
+      if (colorPickerTextureRef.current) {
+        colorPickerTextureRef.current.dispose();
+        colorPickerTextureRef.current = null;
+      }
 
       loadedModelsRef.current.forEach((lm) => {
         scene.remove(lm.model);
@@ -907,20 +1194,6 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     }
   }, [xrSession]);
 
-  // Handle menu selection
-  const handleMenuSelect = (item: string) => {
-    if (item === 'Color') {
-      menuOpenRef.current = false;
-      setMenuOpen(false);
-      setColorPickerOpen(true);
-      // Position color picker at menu position
-      setColorPickerPos(menuPos);
-      return;
-    }
-    // Handle other menu items if needed
-    menuOpenRef.current = false;
-    setMenuOpen(false);
-  };
 
   // Handle color selection
   const handleColorSelect = (color: string) => {
@@ -951,7 +1224,6 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   return (
     <>
       <div ref={mountRef} style={{ width: '100%', height: '100vh', margin: 0, padding: 0 }} />
-      <RadialMenu isOpen={menuOpen} x={menuPos.x} y={menuPos.y} onSelect={handleMenuSelect} />
       <ColorPicker
         isOpen={colorPickerOpen}
         x={colorPickerPos.x}

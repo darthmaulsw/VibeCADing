@@ -12,6 +12,11 @@ function ApiTestPage() {
   const [elevenlabsInput, setElevenlabsInput] = useState<string>('')
   const [elevenlabsLoading, setElevenlabsLoading] = useState<boolean>(false)
   const [elevenlabsOutput, setElevenlabsOutput] = useState<string>('')
+  // Dedalus + TTS
+  const [dedalusText, setDedalusText] = useState<string>('')
+  const [dedalusAudioUrl, setDedalusAudioUrl] = useState<string>('')
+  const [dedalusLoading, setDedalusLoading] = useState<boolean>(false)
+  const [dedalusError, setDedalusError] = useState<string>('')
 
   // Hunyuan Image Model State
   const [hunyuanCaption, setHunyuanCaption] = useState<string>('')
@@ -46,6 +51,37 @@ function ApiTestPage() {
       setOpenscadOutput(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setOpenscadLoading(false)
+    }
+  }
+
+  // Call backend to generate response (Dedalus) and TTS it; play audio
+  const handleDedalusSpeak = async () => {
+    setDedalusError('')
+    setDedalusText('')
+    setDedalusAudioUrl('')
+    setDedalusLoading(true)
+    try {
+      const res = await fetch('/api/getresponse')
+      if (!res.ok) {
+        const t = await res.text()
+        throw new Error(`HTTP ${res.status}: ${t.slice(0,150)}`)
+      }
+      const data = await res.json()
+      setDedalusText(data?.text || '')
+      if (data?.audio_b64) {
+        const bin = atob(data.audio_b64)
+        const bytes = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+        const blob = new Blob([bytes], { type: 'audio/mpeg' })
+        const url = URL.createObjectURL(blob)
+        setDedalusAudioUrl(url)
+        // attempt autoplay; browsers may block without gesture but click should count
+        try { new Audio(url).play() } catch {}
+      }
+    } catch (e:any) {
+      setDedalusError(e?.message || String(e))
+    } finally {
+      setDedalusLoading(false)
     }
   }
 
@@ -388,7 +424,17 @@ function ApiTestPage() {
             <label style={{ display: 'block', fontWeight: 600, marginBottom: '0.5rem' }}>Quick Mic Button</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <MicToFlask endpoint="/api/transcribe"/>
+              <button onClick={handleDedalusSpeak} disabled={dedalusLoading}>
+                {dedalusLoading ? 'Generating & Speaking…' : 'Dedalus: Generate & Speak'}
+              </button>
             </div>
+            {(dedalusError || dedalusText || dedalusAudioUrl) && (
+              <div style={{ marginTop: 8 }}>
+                {dedalusError && <div style={{ color: 'crimson', marginBottom: 6 }}>Error: {dedalusError}</div>}
+                {dedalusText && <div style={{ marginBottom: 6 }}><strong>Dedalus text:</strong> {dedalusText}</div>}
+                {dedalusAudioUrl && <audio controls src={dedalusAudioUrl} />}
+              </div>
+            )}
           </div>
         </div>
       </div>

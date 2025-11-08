@@ -8,8 +8,11 @@ from werkzeug.utils import secure_filename
 from io import BytesIO
 from dotenv import load_dotenv
 from elevenlabs import ElevenLabs
+from dedalus_labs import AsyncDedalus, DedalusRunner
+import asyncio
 
 load_dotenv()
+currentText = ""
 
 elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
 if not elevenlabs_api_key:
@@ -17,6 +20,13 @@ if not elevenlabs_api_key:
     elevenlabs = None
 else:
     elevenlabs = ElevenLabs(api_key=elevenlabs_api_key)
+
+dedalus_api_key = os.getenv("DEDALUS_API_KEY")
+if not dedalus_api_key:
+    print("[WARN] DEDALUS_API_KEY not set. /api/getresponse will return 501 until provided.")
+    dedalus = None
+else:
+    dedalus = AsyncDedalus(api_key=dedalus_api_key)
 
 app = Flask(__name__)
 CORS(app)
@@ -28,6 +38,29 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# Utility: normalize various ElevenLabs audio return types (bytes, file-like, generator of chunks)
+def _audio_to_bytes(obj):
+    if obj is None:
+        return b""
+    if isinstance(obj, (bytes, bytearray)):
+        return bytes(obj)
+    if hasattr(obj, 'read') and callable(getattr(obj, 'read')):
+        return obj.read()
+    if hasattr(obj, '__iter__'):
+        parts = []
+        for chunk in obj:
+            if isinstance(chunk, (bytes, bytearray)):
+                parts.append(bytes(chunk))
+            elif isinstance(chunk, str):
+                parts.append(chunk.encode('utf-8'))
+            else:
+                try:
+                    parts.append(bytes(chunk))
+                except Exception:
+                    pass
+        return b''.join(parts)
+    raise TypeError(f"Unsupported audio object type: {type(obj)}")
 
 # Lazy-initialize Gradio client with simple retries
 _client = None
@@ -205,6 +238,93 @@ def generate_hunyuan_model():
             'traceback': error_trace if app.debug else None
         }), 500
 
+
+@app.get("/api/getresponse")
+def get_response():
+    """Generate a concise CAD progress sentence via Dedalus (async under the hood),
+    synthesize with ElevenLabs, and return JSON with text and base64 audio.
+    Implemented as a sync view to avoid requiring Flask's async extra.
+    """
+    if not elevenlabs:
+        return jsonify({"error": "ELEVENLABS_API_KEY not configured"}), 500
+
+    # Build the prompt using the same template, substituting currentText
+    global currentText
+    prompt_template = (
+        """ based on ${currentText} generate a quick response about what CAD model you are going to generate
+                this response should be about a sentence long, this response basically informs the user that the model is in fact being
+                generated and they should wait until it is done being finalized.
+
+                THE RESPONSE NEEDS TO BE SNAPPY, DONT ADD ANY UNNECESSARY FLUFF, JUST SAY WHAT YOU ARE GENERATING AND
+                DO NOT MENTION ANY FEATURES THE MODEL WILL HAVE.
+
+                DO NOT MENTION ANY BRANDS UNLESS THE USER HAS ASKED FOR A SPECIFIC BRAND ITEM. KEEP EVERYTHING GENERIC.
+
+                DO NOT MENTION THAT YOU CANNOT CREATE THIS MODEL. DO NOT SAY "HERE IS A PROMPT YOU CAN USE"
+                STRICTLY JUST MAKE A RESPONSE AS IF YOU ARE ACTUALLY IN THE MIDDLE OF GENERATING THIS CAD MODEL
+        """
+    )
+    prompt = prompt_template.replace("${currentText}", currentText or "")
+
+    # Run Dedalus's asyync call from a sync context
+    try:
+        client = AsyncDedalus()
+        runner = DedalusRunner(client)
+
+        async def _run():
+            return await runner.run(
+                input=prompt,
+                model=["claude-sonnet-4-20250514"],
+                mcp_servers=["windsor/brave-search-mcp"],
+                stream=False,
+            )
+
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            # If a loop is somehow already running, use a dedicated one
+            new_loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(new_loop)
+                result = new_loop.run_until_complete(_run())
+            finally:
+                new_loop.close()
+                asyncio.set_event_loop(loop)
+        elif loop:
+            result = loop.run_until_complete(_run())
+        else:
+            result = asyncio.run(_run())
+
+        text_out = getattr(result, "final_output", None) or str(result)
+    except Exception as e:
+        import traceback
+        print("/api/getresponse Dedalus error:", e)
+        print(traceback.format_exc())
+        text_out = "Your CAD model generation is underway. Please hold on while we set things up."
+
+    # Synthesize with ElevenLabs and return base64
+    try:
+        audio = elevenlabs.text_to_speech.convert(
+            text=text_out,
+            voice_id="IKne3meq5aSn9XLyUdCD",
+            model_id="eleven_multilingual_v2",
+            output_format="mp3_44100_128",
+        )
+        audio_bytes = _audio_to_bytes(audio)
+        import base64
+        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+        return jsonify({"text": text_out, "audio_b64": audio_b64, "format": "mp3"})
+    except Exception as e:
+        import traceback
+        print("/api/getresponse TTS error:", e)
+        print(traceback.format_exc())
+        return jsonify({"error": "TTS failed", "text": text_out}), 500
+    
+
+
 @app.post("/api/transcribe")
 def transcribe_audio():
     try:
@@ -249,6 +369,8 @@ def transcribe_audio():
             text = tr.text.strip()
 
         print(text)
+        global currentText
+        currentText = text
 
         # Force JSON content-type
         return jsonify({
