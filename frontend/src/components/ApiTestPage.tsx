@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import './ApiTestPage.css'
+import MicToFlask from '../libs/test'
 
 function ApiTestPage() {
   // OpenSCAD State
@@ -48,6 +49,8 @@ function ApiTestPage() {
     }
   }
 
+
+  
   // ElevenLabs Conversation API Test
   const handleElevenLabs = async () => {
     if (!elevenlabsInput.trim()) return
@@ -375,6 +378,17 @@ function ApiTestPage() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      </div>
+      <div className="api-section">
+        <h2>Media Recorder Test</h2>
+        <div className="input-output-container">
+          <div className="input-box">
+            <label style={{ display: 'block', fontWeight: 600, marginBottom: '0.5rem' }}>Quick Mic Button</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <MicToFlask endpoint="/api/transcribe"/>
+            </div>
           </div>
         </div>
       </div>

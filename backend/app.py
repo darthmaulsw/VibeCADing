@@ -5,11 +5,21 @@ import os
 import tempfile
 import shutil
 from werkzeug.utils import secure_filename
+from io import BytesIO
 from dotenv import load_dotenv
+from elevenlabs import ElevenLabs
+
+load_dotenv()
+
+elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
+if not elevenlabs_api_key:
+    print("[WARN] ELEVENLABS_API_KEY not set. /api/transcribe will return 501 until provided.")
+    elevenlabs = None
+else:
+    elevenlabs = ElevenLabs(api_key=elevenlabs_api_key)
 
 app = Flask(__name__)
 CORS(app)
-load_dotenv()
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
@@ -195,9 +205,69 @@ def generate_hunyuan_model():
             'traceback': error_trace if app.debug else None
         }), 500
 
+@app.post("/api/transcribe")
+def transcribe_audio():
+    try:
+        # Debug info
+        print("/api/transcribe content-type:", request.content_type)
+        print("/api/transcribe files keys:", list(request.files.keys()))
+        print("/api/transcribe form keys:", list(request.form.keys()))
+
+        if "file" not in request.files:
+            # Fallback: if frontend sent raw body by mistake
+            raw_len = request.content_length or 0
+            return jsonify({
+                "error": "no file provided",
+                "hint": "Send multipart/form-data with a 'file' field",
+                "content_type": request.content_type,
+                "content_length": raw_len,
+            }), 400
+
+        uploaded = request.files["file"]
+        payload = uploaded.read()
+        print("/api/transcribe received bytes:", len(payload))
+        print("/api/transcribe file name:", getattr(uploaded, "filename", None))
+        print("/api/transcribe file mimetype:", getattr(uploaded, "mimetype", None))
+        audio_data = BytesIO(payload)
+        # Help HTTP client set a meaningful filename/content-type upstream
+        try:
+            audio_data.name = uploaded.filename or "audio.webm"
+        except Exception:
+            pass
+
+        tr = elevenlabs.speech_to_text.convert(
+            file=audio_data,
+            model_id="scribe_v1",
+            tag_audio_events=True,
+            language_code="eng",
+            diarize=True,
+        )
+        text = ""
+        if getattr(tr, "utterances", None):
+            text = " ".join(u.text for u in tr.utterances if u.text).strip()
+        elif getattr(tr, "text", None):
+            text = tr.text.strip()
+
+        print(text)
+
+        # Force JSON content-type
+        return jsonify({
+            "text": text,
+            "raw": tr.model_dump() if hasattr(tr, "model_dump") else dict(tr)
+        })
+    
+
+    except Exception as e:
+        # Always JSON on errors
+        import traceback
+        print("/api/transcribe error:", e)
+        print(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({'status': 'ok'})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)
