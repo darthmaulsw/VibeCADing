@@ -478,7 +478,8 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
                 // Show rotate overlay
                 if (rotateOverlayRef.current) {
                   const objPos = worldPos(obj);
-                  rotateOverlayRef.current.show(objPos);
+                  const currentScale = getUniformScale(obj);
+                  rotateOverlayRef.current.show(objPos, currentScale);
                 }
               }
 
@@ -491,7 +492,9 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
               if (rotateOverlayRef.current && rotationStartRef.current) {
                 const totalRotation = obj.rotation.y - rotationStartRef.current.y;
                 const degrees = ((totalRotation * 180 / Math.PI) % 360 + 360) % 360;
-                rotateOverlayRef.current.update(degrees);
+                const objPos = worldPos(obj);
+                const currentScale = getUniformScale(obj);
+                rotateOverlayRef.current.update(degrees, objPos, currentScale);
               }
             } else {
               // Stop rotation tracking
