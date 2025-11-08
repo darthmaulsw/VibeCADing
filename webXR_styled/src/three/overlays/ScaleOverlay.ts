@@ -28,9 +28,9 @@ export class ScaleOverlay {
 
     positions.forEach((pos) => {
       const points = [
-        new THREE.Vector3(pos.x * 0.1, 0, pos.z * 0.1),
-        new THREE.Vector3(pos.x * 0.1, 0, pos.z * 0.1),
-        new THREE.Vector3(pos.x * 0.1, 0, pos.z * 0.1),
+        new THREE.Vector3(pos.x * 0.15, 0, pos.z * 0.12),
+        new THREE.Vector3(pos.x * 0.15, 0, pos.z * 0.15),
+        new THREE.Vector3(pos.x * 0.12, 0, pos.z * 0.15),
       ];
 
       const geometry = new THREE.BufferGeometry().setFromPoints(points);
@@ -82,9 +82,7 @@ export class ScaleOverlay {
     if (!this.isVisible) return;
 
     this.group.position.copy(position);
-    // Use a fixed scale or scale by a smaller factor to keep brackets closer
-    // The brackets should stay at a consistent visual distance from the object
-    this.group.scale.setScalar(1.0); // Fixed scale - brackets stay at consistent distance
+    this.group.scale.setScalar(scale);
 
     const percent = (scale / this.baseSize) * 100;
     this.label.textContent = `${percent.toFixed(0)}%`;
