@@ -1,10 +1,12 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { loadModel, type LoadedModel } from './utils/modelLoader';
 import { ScaleOverlay } from '../three/overlays/ScaleOverlay';
 import { RotateOverlay } from '../three/overlays/RotateOverlay';
+import { RadialMenu } from './editor/RadialMenu';
+import { ColorPicker } from './ui/ColorPicker';
 
 interface WebXRSceneProps {
   xrSession?: XRSession | null;
@@ -102,6 +104,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   const leftCtrlRef = useRef<THREE.Object3D | null>(null);
   const rightCtrlRef = useRef<THREE.Object3D | null>(null);
   const rightGamepadRef = useRef<Gamepad | null>(null);
+  const leftGamepadRef = useRef<Gamepad | null>(null);
 
   // --- Two-hand scaling state (idle → pending → active) ---
   type ScaleState = 'idle' | 'pending' | 'active';
@@ -127,6 +130,13 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   const rotationStartRef = useRef<THREE.Euler | null>(null);
   const isRotatingRef = useRef(false);
 
+  // --- UI State ---
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  const [colorPickerOpen, setColorPickerOpen] = useState(false);
+  const [colorPickerPos, setColorPickerPos] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  const menuOpenRef = useRef(false);
+
   // Helpers
   const setUniformScale = (obj: THREE.Object3D, s: number) => {
     obj.scale.setScalar(Math.max(SCALE_MIN, Math.min(SCALE_MAX, s)));
@@ -142,6 +152,8 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   const isGrabPressed = (gp?: Gamepad) => !!(gp && (gp.buttons?.[0]?.pressed || gp.buttons?.[1]?.pressed));
   // Right B button (xr-standard puts X/A on 4, Y/B on 5). We only treat B on right.
   const isBPressedRight = (gp?: Gamepad) => !!(gp && gp.buttons?.[5]?.pressed);
+  // Left Y button (button 5 on left controller)
+  const isYPressedLeft = (gp?: Gamepad) => !!(gp && gp.buttons?.[5]?.pressed);
 
   // Laser setup/teardown
   const ensureLaser = (scene: THREE.Scene) => {
@@ -285,7 +297,10 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         state.gamepad = state.inputSource?.gamepad;
         state.prevButtons = new Array(state.gamepad?.buttons?.length || 0).fill(false);
 
-        if (state.handedness === 'left') leftCtrlRef.current = c;
+        if (state.handedness === 'left') {
+          leftCtrlRef.current = c;
+          leftGamepadRef.current = state.gamepad ?? null;
+        }
         if (state.handedness === 'right') {
           rightCtrlRef.current = c;
           rightGamepadRef.current = state.gamepad ?? null;
@@ -293,7 +308,10 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
       });
 
       c.addEventListener('disconnected', () => {
-        if (state.handedness === 'left') leftCtrlRef.current = null;
+        if (state.handedness === 'left') {
+          leftCtrlRef.current = null;
+          leftGamepadRef.current = null;
+        }
         if (state.handedness === 'right') {
           rightCtrlRef.current = null;
           rightGamepadRef.current = null;
@@ -317,11 +335,13 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         lastTimeRef.current == null ? 0 : Math.max(0, (time - lastTimeRef.current) / 1000);
       lastTimeRef.current = time;
 
-      // Poll controllers: determine grabs, right B, keep right gamepad fresh
+      // Poll controllers: determine grabs, right B, left Y, keep gamepads fresh
       let leftGrab = false;
       let rightGrab = false;
       let rightB = false;
       let prevRightB = false;
+      let leftY = false;
+      let prevLeftY = false;
 
       controllersStateRef.current.forEach((cs) => {
         const gp = cs.gamepad;
@@ -334,6 +354,10 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         const grab = isGrabPressed(gp);
         if (cs.handedness === 'left') {
           leftGrab = grab;
+          leftGamepadRef.current = gp; // refresh ref per frame
+          const yPressed = isYPressedLeft(gp);
+          leftY = yPressed || leftY;
+          prevLeftY = cs.prevButtons[5] || prevLeftY;
         }
         if (cs.handedness === 'right') {
           rightGrab = grab;
@@ -347,6 +371,29 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           cs.prevButtons[i] = !!gp.buttons[i]?.pressed;
         }
       });
+
+      // Handle left Y button press to toggle radial menu
+      if (leftY && !prevLeftY && leftCtrlRef.current && cameraRef.current) {
+        // Toggle menu
+        const newMenuOpen = !menuOpenRef.current;
+        menuOpenRef.current = newMenuOpen;
+        setMenuOpen(newMenuOpen);
+        
+        if (newMenuOpen) {
+          // Project controller position to screen coordinates
+          const ctrlPos = worldPos(leftCtrlRef.current);
+          const vector = new THREE.Vector3();
+          vector.copy(ctrlPos);
+          vector.project(cameraRef.current);
+          
+          const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+          const y = (-(vector.y * 0.5) + 0.5) * window.innerHeight;
+          setMenuPos({ x, y });
+        } else {
+          // Close color picker if menu closes
+          setColorPickerOpen(false);
+        }
+      }
 
       const scene = sceneRef.current!;
       const obj = objectRef.current;
@@ -590,7 +637,60 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     }
   }, [xrSession]);
 
-  return <div ref={mountRef} style={{ width: '100%', height: '100vh', margin: 0, padding: 0 }} />;
+  // Handle menu selection
+  const handleMenuSelect = (item: string) => {
+    if (item === 'Color') {
+      menuOpenRef.current = false;
+      setMenuOpen(false);
+      setColorPickerOpen(true);
+      // Position color picker at menu position
+      setColorPickerPos(menuPos);
+      return;
+    }
+    // Handle other menu items if needed
+    menuOpenRef.current = false;
+    setMenuOpen(false);
+  };
+
+  // Handle color selection
+  const handleColorSelect = (color: string) => {
+    if (objectRef.current) {
+      // Apply color to all meshes in the object
+      objectRef.current.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          const mesh = child as THREE.Mesh;
+          if (mesh.material) {
+            if (Array.isArray(mesh.material)) {
+              mesh.material.forEach((mat) => {
+                if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshBasicMaterial) {
+                  mat.color.set(color);
+                }
+              });
+            } else {
+              const mat = mesh.material as THREE.MeshStandardMaterial | THREE.MeshBasicMaterial;
+              if (mat.color) {
+                mat.color.set(color);
+              }
+            }
+          }
+        }
+      });
+    }
+  };
+
+  return (
+    <>
+      <div ref={mountRef} style={{ width: '100%', height: '100vh', margin: 0, padding: 0 }} />
+      <RadialMenu isOpen={menuOpen} x={menuPos.x} y={menuPos.y} onSelect={handleMenuSelect} />
+      <ColorPicker
+        isOpen={colorPickerOpen}
+        x={colorPickerPos.x}
+        y={colorPickerPos.y}
+        onSelect={handleColorSelect}
+        onClose={() => setColorPickerOpen(false)}
+      />
+    </>
+  );
 };
 
 export default WebXRScene;
