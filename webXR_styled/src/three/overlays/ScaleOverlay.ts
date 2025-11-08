@@ -28,9 +28,9 @@ export class ScaleOverlay {
 
     positions.forEach((pos) => {
       const points = [
-        new THREE.Vector3(pos.x * 0.15, 0, pos.z * 0.12),
-        new THREE.Vector3(pos.x * 0.15, 0, pos.z * 0.15),
-        new THREE.Vector3(pos.x * 0.12, 0, pos.z * 0.15),
+        new THREE.Vector3(pos.x * 0.075, 0, pos.z * 0.06),
+        new THREE.Vector3(pos.x * 0.075, 0, pos.z * 0.075),
+        new THREE.Vector3(pos.x * 0.06, 0, pos.z * 0.075),
       ];
 
       const geometry = new THREE.BufferGeometry().setFromPoints(points);
