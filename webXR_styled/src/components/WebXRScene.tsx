@@ -567,7 +567,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           stickY = gp.axes[1] ?? 0;
         }
         
-        const stickDeadzone = 0.2; // Lower deadzone for better sensitivity
+        const stickDeadzone = 0.1; // Lower deadzone for better sensitivity
         
         // Calculate angle from joystick input
         if (Math.abs(stickX) > stickDeadzone || Math.abs(stickY) > stickDeadzone) {
