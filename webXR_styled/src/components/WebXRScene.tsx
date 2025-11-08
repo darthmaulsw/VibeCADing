@@ -1,9 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { loadModel, type LoadedModel } from './utils/modelLoader';
 import { ScaleOverlay } from '../three/overlays/ScaleOverlay';
+import { RotateOverlay } from '../three/overlays/RotateOverlay';
+import { ColorPicker } from './ui/ColorPicker';
 
 interface WebXRSceneProps {
   xrSession?: XRSession | null;
@@ -101,6 +103,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   const leftCtrlRef = useRef<THREE.Object3D | null>(null);
   const rightCtrlRef = useRef<THREE.Object3D | null>(null);
   const rightGamepadRef = useRef<Gamepad | null>(null);
+  const leftGamepadRef = useRef<Gamepad | null>(null);
 
   // --- Two-hand scaling state (idle → pending → active) ---
   type ScaleState = 'idle' | 'pending' | 'active';
@@ -120,6 +123,30 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
 
   // --- Scale overlay ---
   const scaleOverlayRef = useRef<ScaleOverlay | null>(null);
+  
+  // --- Rotate overlay ---
+  const rotateOverlayRef = useRef<RotateOverlay | null>(null);
+  const rotationStartRef = useRef<THREE.Euler | null>(null);
+  const isRotatingRef = useRef(false);
+
+  // --- UI State ---
+  const [colorPickerOpen, setColorPickerOpen] = useState(false);
+  const [colorPickerPos, setColorPickerPos] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  const menuOpenRef = useRef(false);
+  const menuPosRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  
+  // --- 3D Menu in AR ---
+  const menuPlaneRef = useRef<THREE.Mesh | null>(null);
+  const menuCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const menuTextureRef = useRef<THREE.CanvasTexture | null>(null);
+  const menuSelectedIndexRef = useRef<number | null>(null);
+  const prevMenuStickClickRef = useRef<boolean>(false);
+  
+  // --- 3D Color Picker in AR ---
+  const colorPickerPlaneRef = useRef<THREE.Mesh | null>(null);
+  const colorPickerCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const colorPickerTextureRef = useRef<THREE.CanvasTexture | null>(null);
+  const colorPickerStateRef = useRef({ hue: 200, saturation: 80, lightness: 60, rotation: 0 });
 
   // Helpers
   const setUniformScale = (obj: THREE.Object3D, s: number) => {
@@ -132,10 +159,221 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     return d.applyQuaternion(obj.getWorldQuaternion(new THREE.Quaternion())).normalize();
   };
 
+  // Render menu to canvas
+  const renderMenuToCanvas = (canvas: HTMLCanvasElement, isOpen: boolean, selectedIndex: number | null = null) => {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Clear canvas with transparent background
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    if (!isOpen) return;
+    
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    const innerRadius = 80;
+    const outerRadius = 184;
+    const items = ['Rotate', 'Color'];
+    const segmentAngle = (2 * Math.PI) / items.length;
+    
+    // Draw menu items
+    items.forEach((item, i) => {
+      const startAngle = i * segmentAngle - Math.PI / 2;
+      const endAngle = (i + 1) * segmentAngle - Math.PI / 2;
+      const isSelected = selectedIndex === i;
+      
+      // Draw arc segment
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, outerRadius, startAngle, endAngle);
+      ctx.arc(centerX, centerY, innerRadius, endAngle, startAngle, true);
+      ctx.closePath();
+      
+      // Highlight selected item
+      if (isSelected) {
+        ctx.fillStyle = 'rgba(130, 209, 255, 0.15)';
+        ctx.fill();
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 3;
+      } else {
+        ctx.fillStyle = 'rgba(14, 18, 36, 0.7)';
+        ctx.fill();
+        ctx.strokeStyle = '#00D4FF';
+        ctx.lineWidth = 2;
+      }
+      ctx.stroke();
+      
+      // Draw text
+      const textAngle = startAngle + segmentAngle / 2;
+      const textRadius = (innerRadius + outerRadius) / 2;
+      const textX = centerX + Math.cos(textAngle) * textRadius;
+      const textY = centerY + Math.sin(textAngle) * textRadius;
+      
+      ctx.fillStyle = isSelected ? '#FFFFFF' : '#00D4FF';
+      ctx.font = isSelected ? 'bold 18px monospace' : 'bold 16px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      // Add glow effect for selected item
+      if (isSelected) {
+        ctx.shadowColor = '#00D4FF';
+        ctx.shadowBlur = 10;
+      } else {
+        ctx.shadowBlur = 0;
+      }
+      
+      ctx.fillText(item, textX, textY);
+      ctx.shadowBlur = 0;
+    });
+    
+    // Draw decorative circles
+    ctx.strokeStyle = '#00D4FF';
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.4;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, outerRadius + 20, 0, 2 * Math.PI);
+    ctx.stroke();
+    ctx.globalAlpha = 1.0;
+  };
+
+  // Render color picker to canvas
+  const renderColorPickerToCanvas = (
+    canvas: HTMLCanvasElement,
+    isOpen: boolean,
+    hue: number,
+    saturation: number,
+    lightness: number,
+    rotation: number
+  ) => {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Clear canvas with transparent background
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    if (!isOpen) return;
+    
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    const radius = 140;
+    const spectrumSegments = 36;
+    const innerR = 62;
+    const outerR = 90;
+    
+    // Draw decorative rotating circles
+    ctx.save();
+    ctx.translate(centerX, centerY);
+    ctx.rotate((rotation * Math.PI) / 180);
+    ctx.strokeStyle = 'rgba(0, 212, 255, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 10]);
+    ctx.beginPath();
+    ctx.arc(0, 0, radius - 10, 0, 2 * Math.PI);
+    ctx.stroke();
+    ctx.restore();
+    
+    ctx.save();
+    ctx.translate(centerX, centerY);
+    ctx.rotate((-rotation * 1.5 * Math.PI) / 180);
+    ctx.strokeStyle = 'rgba(0, 212, 255, 0.2)';
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([3, 6]);
+    ctx.beginPath();
+    ctx.arc(0, 0, radius - 25, 0, 2 * Math.PI);
+    ctx.stroke();
+    ctx.restore();
+    
+    // Draw decorative lines
+    ctx.strokeStyle = 'rgba(0, 212, 255, 0.15)';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < spectrumSegments; i++) {
+      const angle = (i / spectrumSegments) * 360;
+      const rad = (angle * Math.PI) / 180;
+      const x1 = centerX + Math.cos(rad) * 35;
+      const y1 = centerY + Math.sin(rad) * 35;
+      const x2 = centerX + Math.cos(rad) * 90;
+      const y2 = centerY + Math.sin(rad) * 90;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+    
+    // Draw color spectrum segments
+    for (let i = 0; i < spectrumSegments; i++) {
+      const segmentHue = (i / spectrumSegments) * 360;
+      const startAngle = ((i / spectrumSegments) * 360 - 90) * (Math.PI / 180);
+      const endAngle = (((i + 1) / spectrumSegments) * 360 - 90) * (Math.PI / 180);
+      
+      const x1 = centerX + Math.cos(startAngle) * innerR;
+      const y1 = centerY + Math.sin(startAngle) * innerR;
+      const x2 = centerX + Math.cos(startAngle) * outerR;
+      const y2 = centerY + Math.sin(startAngle) * outerR;
+      const x4 = centerX + Math.cos(endAngle) * innerR;
+      const y4 = centerY + Math.sin(endAngle) * innerR;
+      
+      const color = `hsl(${segmentHue}, 80%, 60%)`;
+      const isSelected = Math.abs(hue - segmentHue) < 10;
+      
+      // Draw segment
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.arc(centerX, centerY, outerR, startAngle, endAngle);
+      ctx.lineTo(x4, y4);
+      ctx.arc(centerX, centerY, innerR, endAngle, startAngle, true);
+      ctx.closePath();
+      
+      // Fill with color
+      ctx.fillStyle = color;
+      ctx.fill();
+      
+      // Stroke
+      if (isSelected) {
+        ctx.strokeStyle = '#00D4FF';
+        ctx.lineWidth = 2;
+      } else {
+        ctx.strokeStyle = 'rgba(130, 209, 255, 0.2)';
+        ctx.lineWidth = 0.5;
+      }
+      ctx.stroke();
+    }
+    
+    // Draw center button
+    const centerColor = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+    ctx.fillStyle = centerColor;
+    ctx.strokeStyle = 'rgba(130, 209, 255, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, 32, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.stroke();
+    
+    // Draw X in center
+    ctx.strokeStyle = lightness > 50 ? '#0E1224' : '#00D4FF';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(centerX - 8, centerY - 8);
+    ctx.lineTo(centerX + 8, centerY + 8);
+    ctx.moveTo(centerX + 8, centerY - 8);
+    ctx.lineTo(centerX - 8, centerY + 8);
+    ctx.stroke();
+    
+    // Draw label
+    ctx.fillStyle = '#00D4FF';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.globalAlpha = 0.5;
+    ctx.fillText('COLOR SPECTRUM', centerX, centerY + radius + 8);
+    ctx.globalAlpha = 1.0;
+  };
+
   // "Grab" = trigger (0) OR grip/squeeze (1)
   const isGrabPressed = (gp?: Gamepad) => !!(gp && (gp.buttons?.[0]?.pressed || gp.buttons?.[1]?.pressed));
   // Right B button (xr-standard puts X/A on 4, Y/B on 5). We only treat B on right.
   const isBPressedRight = (gp?: Gamepad) => !!(gp && gp.buttons?.[5]?.pressed);
+  // Left Y button (button 5 on left controller)
+  const isYPressedLeft = (gp?: Gamepad) => !!(gp && gp.buttons?.[5]?.pressed);
 
   // Laser setup/teardown
   const ensureLaser = (scene: THREE.Scene) => {
@@ -213,6 +451,65 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     const scaleOverlay = new ScaleOverlay(scene);
     scaleOverlayRef.current = scaleOverlay;
 
+    /* ---------- Rotate overlay ---------- */
+    const rotateOverlay = new RotateOverlay(scene);
+    rotateOverlayRef.current = rotateOverlay;
+
+    /* ---------- 3D Menu Plane for AR ---------- */
+    const menuCanvas = document.createElement('canvas');
+    menuCanvas.width = 600;
+    menuCanvas.height = 600;
+    menuCanvasRef.current = menuCanvas;
+    
+    const menuTexture = new THREE.CanvasTexture(menuCanvas);
+    menuTexture.needsUpdate = true;
+    // Enable texture updates
+    menuTexture.minFilter = THREE.LinearFilter;
+    menuTexture.magFilter = THREE.LinearFilter;
+    menuTextureRef.current = menuTexture;
+    
+    const menuPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.6, 0.6),
+      new THREE.MeshBasicMaterial({
+        map: menuTexture,
+        transparent: true,
+        side: THREE.DoubleSide,
+        alphaTest: 0.01,
+        depthWrite: false,
+      })
+    );
+    menuPlane.visible = false;
+    menuPlane.name = 'MenuPlane';
+    scene.add(menuPlane);
+    menuPlaneRef.current = menuPlane;
+
+    /* ---------- 3D Color Picker Plane for AR ---------- */
+    const colorPickerCanvas = document.createElement('canvas');
+    colorPickerCanvas.width = 600;
+    colorPickerCanvas.height = 600;
+    colorPickerCanvasRef.current = colorPickerCanvas;
+    
+    const colorPickerTexture = new THREE.CanvasTexture(colorPickerCanvas);
+    colorPickerTexture.needsUpdate = true;
+    colorPickerTexture.minFilter = THREE.LinearFilter;
+    colorPickerTexture.magFilter = THREE.LinearFilter;
+    colorPickerTextureRef.current = colorPickerTexture;
+    
+    const colorPickerPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.6, 0.6),
+      new THREE.MeshBasicMaterial({
+        map: colorPickerTexture,
+        transparent: true,
+        side: THREE.DoubleSide,
+        alphaTest: 0.01,
+        depthWrite: false,
+      })
+    );
+    colorPickerPlane.visible = false;
+    colorPickerPlane.name = 'ColorPickerPlane';
+    scene.add(colorPickerPlane);
+    colorPickerPlaneRef.current = colorPickerPlane;
+
     /* ---------- Load model (meters) ---------- */
     const loadModelMeters = async () => {
       try {
@@ -275,7 +572,10 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         state.gamepad = state.inputSource?.gamepad;
         state.prevButtons = new Array(state.gamepad?.buttons?.length || 0).fill(false);
 
-        if (state.handedness === 'left') leftCtrlRef.current = c;
+        if (state.handedness === 'left') {
+          leftCtrlRef.current = c;
+          leftGamepadRef.current = state.gamepad ?? null;
+        }
         if (state.handedness === 'right') {
           rightCtrlRef.current = c;
           rightGamepadRef.current = state.gamepad ?? null;
@@ -283,7 +583,10 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
       });
 
       c.addEventListener('disconnected', () => {
-        if (state.handedness === 'left') leftCtrlRef.current = null;
+        if (state.handedness === 'left') {
+          leftCtrlRef.current = null;
+          leftGamepadRef.current = null;
+        }
         if (state.handedness === 'right') {
           rightCtrlRef.current = null;
           rightGamepadRef.current = null;
@@ -307,11 +610,15 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         lastTimeRef.current == null ? 0 : Math.max(0, (time - lastTimeRef.current) / 1000);
       lastTimeRef.current = time;
 
-      // Poll controllers: determine grabs, right B, keep right gamepad fresh
+      // Poll controllers: determine grabs, right B, left Y, keep gamepads fresh
       let leftGrab = false;
       let rightGrab = false;
       let rightB = false;
       let prevRightB = false;
+      let leftY = false;
+      let prevLeftY = false;
+      let leftStickClick = false;
+      let prevLeftStickClick = false;
 
       controllersStateRef.current.forEach((cs) => {
         const gp = cs.gamepad;
@@ -324,6 +631,24 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         const grab = isGrabPressed(gp);
         if (cs.handedness === 'left') {
           leftGrab = grab;
+          leftGamepadRef.current = gp; // refresh ref per frame
+          const yPressed = isYPressedLeft(gp);
+          leftY = yPressed || leftY;
+          prevLeftY = cs.prevButtons[5] || prevLeftY;
+          
+          // Check joystick click - try multiple button indices
+          // Quest controllers: button 11 might be stick click, button 0 is trigger
+          let stickClick = false;
+          if (gp.buttons) {
+            if (gp.buttons[11]?.pressed) {
+              stickClick = true;
+            } else if (gp.buttons[0]?.pressed && !grab) {
+              // Use trigger as stick click if not grabbing
+              stickClick = true;
+            }
+          }
+          leftStickClick = stickClick || leftStickClick;
+          prevLeftStickClick = (cs.prevButtons[11] || cs.prevButtons[0]) || prevLeftStickClick;
         }
         if (cs.handedness === 'right') {
           rightGrab = grab;
@@ -337,6 +662,267 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           cs.prevButtons[i] = !!gp.buttons[i]?.pressed;
         }
       });
+
+      // Handle left Y button press to toggle radial menu
+      if (leftY && !prevLeftY && leftCtrlRef.current && cameraRef.current) {
+        // Toggle menu
+        const newMenuOpen = !menuOpenRef.current;
+        menuOpenRef.current = newMenuOpen;
+        
+        if (newMenuOpen) {
+          // Position 3D menu in front of controller
+          if (menuPlaneRef.current && leftCtrlRef.current && menuCanvasRef.current && menuTextureRef.current) {
+            const ctrlPos = worldPos(leftCtrlRef.current);
+            const ctrlDir = worldDir(leftCtrlRef.current);
+            const menuDistance = 0.4; // 40cm in front of controller
+            
+            menuPlaneRef.current.position.copy(ctrlPos);
+            menuPlaneRef.current.position.add(ctrlDir.multiplyScalar(menuDistance));
+            
+            // Make menu face camera
+            menuPlaneRef.current.lookAt(cameraRef.current.position);
+            menuPlaneRef.current.visible = true;
+            
+            // Set default selection to first item when opening menu
+            menuSelectedIndexRef.current = 0;
+            
+            // Render menu to canvas and update texture
+            renderMenuToCanvas(menuCanvasRef.current, true, 0);
+            menuTextureRef.current.needsUpdate = true;
+          }
+          
+          // Project controller position to screen coordinates (for color picker positioning)
+          const ctrlPos = worldPos(leftCtrlRef.current);
+          const vector = new THREE.Vector3();
+          vector.copy(ctrlPos);
+          vector.project(cameraRef.current);
+          
+          const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+          const y = (-(vector.y * 0.5) + 0.5) * window.innerHeight;
+          menuPosRef.current = { x, y };
+        } else {
+          // Hide 3D menu
+          if (menuPlaneRef.current) {
+            menuPlaneRef.current.visible = false;
+          }
+          // Close color picker if menu closes
+          setColorPickerOpen(false);
+        }
+      }
+      
+      // Handle menu navigation with left joystick
+      if (menuOpenRef.current && leftGamepadRef.current && menuCanvasRef.current && menuTextureRef.current) {
+        const gp = leftGamepadRef.current;
+        const items = ['Color', 'Rotate', 'Scale'];
+        
+        // Get joystick input - try different axis indices (Quest controllers use 2 and 3 for left stick)
+        // axes 0,1 might be thumbstick, axes 2,3 might be touchpad or different mapping
+        let stickX = 0;
+        let stickY = 0;
+        
+        // Try axes 2 and 3 first (common for Quest controllers)
+        if (gp.axes && gp.axes.length > 3) {
+          stickX = gp.axes[2] ?? 0;
+          stickY = gp.axes[3] ?? 0;
+        }
+        // Fallback to axes 0 and 1
+        if (Math.abs(stickX) < 0.1 && Math.abs(stickY) < 0.1 && gp.axes && gp.axes.length > 1) {
+          stickX = gp.axes[0] ?? 0;
+          stickY = gp.axes[1] ?? 0;
+        }
+        
+        const stickDeadzone = 0.1; // Lower deadzone for better sensitivity
+        
+        // Calculate angle from joystick input
+        if (Math.abs(stickX) > stickDeadzone || Math.abs(stickY) > stickDeadzone) {
+          // Calculate angle from joystick
+          // Joystick coordinates: right=+X, up=-Y (inverted Y in gamepad API)
+          // We need to account for the coordinate system difference
+          const angle = Math.atan2(stickX, -stickY); // Standard atan2
+          // Rotate by 180 degrees to fix the inversion
+          const rotatedAngle = (angle + Math.PI) % (Math.PI * 2);
+          const normalizedAngle = (rotatedAngle + Math.PI * 2) % (Math.PI * 2);
+          
+          // Convert angle to menu item index (menu starts at -90 degrees / top)
+          // Menu items are arranged clockwise starting from top (index 0 = Select at top)
+          const menuStartAngle = -Math.PI / 2; // Top position
+          let itemAngle = (normalizedAngle - menuStartAngle + Math.PI * 2) % (Math.PI * 2);
+          const segmentAngle = (2 * Math.PI) / items.length;
+          let selectedIndex = Math.floor(itemAngle / segmentAngle);
+          
+          // Clamp to valid range
+          if (selectedIndex >= items.length) selectedIndex = items.length - 1;
+          if (selectedIndex < 0) selectedIndex = 0;
+          
+          if (menuSelectedIndexRef.current !== selectedIndex) {
+            menuSelectedIndexRef.current = selectedIndex;
+            renderMenuToCanvas(menuCanvasRef.current, true, selectedIndex);
+            menuTextureRef.current.needsUpdate = true;
+          }
+        } else {
+          // If joystick is in deadzone but we have a selection, keep it visible
+          if (menuSelectedIndexRef.current !== null && menuSelectedIndexRef.current >= 0) {
+            renderMenuToCanvas(menuCanvasRef.current, true, menuSelectedIndexRef.current);
+            menuTextureRef.current.needsUpdate = true;
+          }
+        }
+        
+        // Handle joystick click to select - try multiple button indices
+        // Quest controllers: button 11 might be stick click, but could also be 0 (trigger) or others
+        let stickClickDetected = false;
+        if (gp.buttons) {
+          // Try button 11 (common stick click index)
+          if (gp.buttons[11]?.pressed) stickClickDetected = true;
+          // Also try button 0 (trigger) as fallback
+          else if (gp.buttons[0]?.pressed && !leftGrab) stickClickDetected = true;
+        }
+        
+        // Check for joystick click - use ref to track previous state across frames
+        const currentStickClick = stickClickDetected;
+        const wasStickClickPressed = prevMenuStickClickRef.current;
+        
+        if (currentStickClick && !wasStickClickPressed && menuSelectedIndexRef.current !== null && menuSelectedIndexRef.current >= 0) {
+          const selectedItem = items[menuSelectedIndexRef.current];
+          // Close menu and handle selection
+          menuOpenRef.current = false;
+          if (menuPlaneRef.current) {
+            menuPlaneRef.current.visible = false;
+          }
+          
+          // Handle menu selection
+          if (selectedItem === 'Color') {
+            // Open color picker in AR
+            if (colorPickerPlaneRef.current && leftCtrlRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current && cameraRef.current) {
+              const ctrlPos = worldPos(leftCtrlRef.current);
+              const ctrlDir = worldDir(leftCtrlRef.current);
+              const pickerDistance = 0.4;
+              
+              colorPickerPlaneRef.current.position.copy(ctrlPos);
+              colorPickerPlaneRef.current.position.add(ctrlDir.multiplyScalar(pickerDistance));
+              colorPickerPlaneRef.current.lookAt(cameraRef.current.position);
+              colorPickerPlaneRef.current.visible = true;
+              
+              // Reset color picker state
+              colorPickerStateRef.current = { hue: 200, saturation: 80, lightness: 60, rotation: 0 };
+              
+              // Render initial color picker
+              renderColorPickerToCanvas(
+                colorPickerCanvasRef.current,
+                true,
+                colorPickerStateRef.current.hue,
+                colorPickerStateRef.current.saturation,
+                colorPickerStateRef.current.lightness,
+                colorPickerStateRef.current.rotation
+              );
+              colorPickerTextureRef.current.needsUpdate = true;
+            }
+            setColorPickerOpen(true);
+            setColorPickerPos(menuPosRef.current);
+          } else {
+            // Handle other menu items if needed
+            setColorPickerOpen(false);
+          }
+        }
+        
+        // Update previous stick click state for next frame
+        prevMenuStickClickRef.current = currentStickClick;
+      } else {
+        // Reset previous stick click state when menu is closed
+        prevMenuStickClickRef.current = false;
+      }
+      
+      // Handle color picker interaction
+      if (colorPickerOpen && leftGamepadRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current) {
+        const gp = leftGamepadRef.current;
+        
+        // Get joystick input for hue selection
+        let stickX = 0;
+        let stickY = 0;
+        
+        if (gp.axes && gp.axes.length > 3) {
+          stickX = gp.axes[2] ?? 0;
+          stickY = gp.axes[3] ?? 0;
+        }
+        if (Math.abs(stickX) < 0.1 && Math.abs(stickY) < 0.1 && gp.axes && gp.axes.length > 1) {
+          stickX = gp.axes[0] ?? 0;
+          stickY = gp.axes[1] ?? 0;
+        }
+        
+        const stickDeadzone = 0.1;
+        
+        // Update hue based on joystick angle
+        if (Math.abs(stickX) > stickDeadzone || Math.abs(stickY) > stickDeadzone) {
+          const angle = Math.atan2(stickX, -stickY);
+          const normalizedAngle = (angle + Math.PI * 2) % (Math.PI * 2);
+          const newHue = Math.floor((normalizedAngle / (Math.PI * 2)) * 360);
+          
+          if (Math.abs(colorPickerStateRef.current.hue - newHue) > 5) {
+            colorPickerStateRef.current.hue = newHue;
+            
+            // Update color immediately
+            const color = `hsl(${colorPickerStateRef.current.hue}, ${colorPickerStateRef.current.saturation}%, ${colorPickerStateRef.current.lightness}%)`;
+            handleColorSelect(color);
+          }
+        }
+        
+        // Update rotation for animation
+        colorPickerStateRef.current.rotation = (colorPickerStateRef.current.rotation + 0.4) % 360;
+        
+        // Continuously update color picker texture
+        renderColorPickerToCanvas(
+          colorPickerCanvasRef.current,
+          true,
+          colorPickerStateRef.current.hue,
+          colorPickerStateRef.current.saturation,
+          colorPickerStateRef.current.lightness,
+          colorPickerStateRef.current.rotation
+        );
+        colorPickerTextureRef.current.needsUpdate = true;
+        
+        // Handle joystick click to close
+        let stickClickDetected = false;
+        if (gp.buttons) {
+          if (gp.buttons[11]?.pressed) stickClickDetected = true;
+          else if (gp.buttons[0]?.pressed && !leftGrab) stickClickDetected = true;
+        }
+        
+        if (stickClickDetected && !prevLeftStickClick) {
+          // Close color picker
+          setColorPickerOpen(false);
+          if (colorPickerPlaneRef.current) {
+            colorPickerPlaneRef.current.visible = false;
+          }
+        }
+      }
+      
+      // Update 3D color picker position to follow controller
+      if (colorPickerOpen && colorPickerPlaneRef.current && leftCtrlRef.current && cameraRef.current) {
+        const ctrlPos = worldPos(leftCtrlRef.current);
+        const ctrlDir = worldDir(leftCtrlRef.current);
+        const pickerDistance = 0.4;
+        
+        colorPickerPlaneRef.current.position.copy(ctrlPos);
+        colorPickerPlaneRef.current.position.add(ctrlDir.multiplyScalar(pickerDistance));
+        colorPickerPlaneRef.current.lookAt(cameraRef.current.position);
+      }
+      
+      // Update 3D menu position to follow controller
+      if (menuOpenRef.current && menuPlaneRef.current && leftCtrlRef.current && cameraRef.current) {
+        const ctrlPos = worldPos(leftCtrlRef.current);
+        const ctrlDir = worldDir(leftCtrlRef.current);
+        const menuDistance = 0.4;
+        
+        menuPlaneRef.current.position.copy(ctrlPos);
+        menuPlaneRef.current.position.add(ctrlDir.multiplyScalar(menuDistance));
+        menuPlaneRef.current.lookAt(cameraRef.current.position);
+        
+        // Continuously update menu texture to ensure it's visible
+        if (menuCanvasRef.current && menuTextureRef.current) {
+          // Re-render menu with current selection to ensure texture is up to date
+          renderMenuToCanvas(menuCanvasRef.current, true, menuSelectedIndexRef.current);
+          menuTextureRef.current.needsUpdate = true;
+        }
+      }
 
       const scene = sceneRef.current!;
       const obj = objectRef.current;
@@ -373,9 +959,14 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           // Laser visuals
           updateLaser(origin, target);
 
-          // When dragging, disable scaling state
+          // When dragging, disable scaling and rotation states
           if (scaleStateRef.current === 'active' && scaleOverlayRef.current) {
             scaleOverlayRef.current.hide();
+          }
+          if (isRotatingRef.current && rotateOverlayRef.current) {
+            rotateOverlayRef.current.hide();
+            isRotatingRef.current = false;
+            rotationStartRef.current = null;
           }
           scaleStateRef.current = 'idle';
           pendingDistanceRef.current = null;
@@ -455,18 +1046,54 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
             const sy = Math.abs(axY) > STICK_DEADZONE ? axY : 0;
 
             if (sx !== 0 || sy !== 0) {
+              // Start rotation tracking if not already rotating
+              if (!isRotatingRef.current) {
+                isRotatingRef.current = true;
+                rotationStartRef.current = obj.rotation.clone();
+                
+                // Show rotate overlay
+                if (rotateOverlayRef.current) {
+                  const objPos = worldPos(obj);
+                  const currentScale = getUniformScale(obj);
+                  rotateOverlayRef.current.show(objPos, currentScale);
+                }
+              }
+
               const yawDelta   = THREE.MathUtils.clamp(sx * ROT_GAIN_RAD_PER_M * dt, -ROT_MAX_STEP, ROT_MAX_STEP);
               const pitchDelta = THREE.MathUtils.clamp(-sy * ROT_GAIN_RAD_PER_M * dt, -ROT_MAX_STEP, ROT_MAX_STEP);
               if (yawDelta)   obj.rotateOnAxis(new THREE.Vector3(0, 1, 0), yawDelta);
               if (pitchDelta) obj.rotateOnAxis(new THREE.Vector3(1, 0, 0), pitchDelta);
+
+              // Update rotate overlay with total rotation
+              if (rotateOverlayRef.current && rotationStartRef.current) {
+                const totalRotation = obj.rotation.y - rotationStartRef.current.y;
+                const degrees = ((totalRotation * 180 / Math.PI) % 360 + 360) % 360;
+                const objPos = worldPos(obj);
+                const currentScale = getUniformScale(obj);
+                rotateOverlayRef.current.update(degrees, objPos, currentScale);
+              }
+            } else {
+              // Stop rotation tracking
+              if (isRotatingRef.current) {
+                isRotatingRef.current = false;
+                rotationStartRef.current = null;
+                
+                // Hide rotate overlay
+                if (rotateOverlayRef.current) {
+                  rotateOverlayRef.current.hide();
+                }
+              }
             }
           }
         }
       }
 
-      // Render scale overlay
+      // Render overlays
       if (scaleOverlayRef.current) {
         scaleOverlayRef.current.render(camera);
+      }
+      if (rotateOverlayRef.current) {
+        rotateOverlayRef.current.render(camera);
       }
 
       renderer.render(scene, camera);
@@ -502,10 +1129,42 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         laserDotRef.current = null;
       }
 
-      // Dispose scale overlay
+      // Dispose overlays
       if (scaleOverlayRef.current) {
         scaleOverlayRef.current.dispose();
         scaleOverlayRef.current = null;
+      }
+      if (rotateOverlayRef.current) {
+        rotateOverlayRef.current.dispose();
+        rotateOverlayRef.current = null;
+      }
+      
+      // Dispose menu plane
+      if (menuPlaneRef.current) {
+        scene.remove(menuPlaneRef.current);
+        if (menuPlaneRef.current.material instanceof THREE.Material) {
+          menuPlaneRef.current.material.dispose();
+        }
+        menuPlaneRef.current.geometry.dispose();
+        menuPlaneRef.current = null;
+      }
+      if (menuTextureRef.current) {
+        menuTextureRef.current.dispose();
+        menuTextureRef.current = null;
+      }
+      
+      // Dispose color picker plane
+      if (colorPickerPlaneRef.current) {
+        scene.remove(colorPickerPlaneRef.current);
+        if (colorPickerPlaneRef.current.material instanceof THREE.Material) {
+          colorPickerPlaneRef.current.material.dispose();
+        }
+        colorPickerPlaneRef.current.geometry.dispose();
+        colorPickerPlaneRef.current = null;
+      }
+      if (colorPickerTextureRef.current) {
+        colorPickerTextureRef.current.dispose();
+        colorPickerTextureRef.current = null;
       }
 
       loadedModelsRef.current.forEach((lm) => {
@@ -535,7 +1194,45 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     }
   }, [xrSession]);
 
-  return <div ref={mountRef} style={{ width: '100%', height: '100vh', margin: 0, padding: 0 }} />;
+
+  // Handle color selection
+  const handleColorSelect = (color: string) => {
+    if (objectRef.current) {
+      // Apply color to all meshes in the object
+      objectRef.current.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          const mesh = child as THREE.Mesh;
+          if (mesh.material) {
+            if (Array.isArray(mesh.material)) {
+              mesh.material.forEach((mat) => {
+                if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshBasicMaterial) {
+                  mat.color.set(color);
+                }
+              });
+            } else {
+              const mat = mesh.material as THREE.MeshStandardMaterial | THREE.MeshBasicMaterial;
+              if (mat.color) {
+                mat.color.set(color);
+              }
+            }
+          }
+        }
+      });
+    }
+  };
+
+  return (
+    <>
+      <div ref={mountRef} style={{ width: '100%', height: '100vh', margin: 0, padding: 0 }} />
+      <ColorPicker
+        isOpen={colorPickerOpen}
+        x={colorPickerPos.x}
+        y={colorPickerPos.y}
+        onSelect={handleColorSelect}
+        onClose={() => setColorPickerOpen(false)}
+      />
+    </>
+  );
 };
 
 export default WebXRScene;
