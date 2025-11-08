@@ -1,52 +1,97 @@
 .api-test {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 2rem;
   padding: 1rem;
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
-.test-input {
+.api-section {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 1.5rem;
+  background: #fafafa;
+}
+
+.api-section h2 {
+  margin: 0 0 1rem 0;
+  font-size: 1.5rem;
+  color: #333;
+}
+
+.input-output-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+.input-box,
+.output-box {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
 
-.test-input textarea {
+.input-box label,
+.output-box label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.input-box textarea {
   width: 100%;
-  padding: 0.5rem;
+  padding: 0.75rem;
   border: 1px solid #ccc;
   border-radius: 4px;
-  font-family: inherit;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9rem;
+  resize: vertical;
 }
 
-.test-input button {
-  padding: 0.5rem 1rem;
+.input-box button {
+  padding: 0.75rem 1.5rem;
   border: 1px solid #ccc;
   border-radius: 4px;
-  background: #f0f0f0;
+  background: #4a90e2;
+  color: white;
   cursor: pointer;
+  font-size: 1rem;
+  font-weight: 500;
+  align-self: flex-start;
 }
 
-.test-input button:hover:not(:disabled) {
-  background: #e0e0e0;
+.input-box button:hover:not(:disabled) {
+  background: #357abd;
 }
 
-.test-input button:disabled {
+.input-box button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.response-box {
-  padding: 1rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
+.output-box {
   background: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 0.75rem;
+  min-height: 200px;
 }
 
-.response-box pre {
+.output-box pre {
   margin: 0;
   white-space: pre-wrap;
   word-wrap: break-word;
-  font-family: monospace;
+  font-family: 'Courier New', monospace;
   font-size: 0.9rem;
+  color: #333;
+  overflow-y: auto;
+  max-height: 400px;
+}
+
+@media (max-width: 968px) {
+  .input-output-container {
+    grid-template-columns: 1fr;
+  }
 }
