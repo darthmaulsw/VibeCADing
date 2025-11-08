@@ -159,6 +159,9 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     return d.applyQuaternion(obj.getWorldQuaternion(new THREE.Quaternion())).normalize();
   };
 
+  // Menu items - must match in both renderMenuToCanvas and navigation code
+  const MENU_ITEMS = ['Color', 'Rotate', 'Scale'];
+  
   // Render menu to canvas
   const renderMenuToCanvas = (canvas: HTMLCanvasElement, isOpen: boolean, selectedIndex: number | null = null) => {
     const ctx = canvas.getContext('2d');
@@ -173,7 +176,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     const centerY = canvas.height / 2;
     const innerRadius = 80;
     const outerRadius = 184;
-    const items = ['Rotate', 'Color'];
+    const items = MENU_ITEMS;
     const segmentAngle = (2 * Math.PI) / items.length;
     
     // Draw menu items
@@ -724,7 +727,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
       // Handle menu navigation with left joystick
       if (menuOpenRef.current && leftGamepadRef.current && menuCanvasRef.current && menuTextureRef.current) {
         const gp = leftGamepadRef.current;
-        const items = ['Color', 'Rotate', 'Scale'];
+        const items = MENU_ITEMS;
         
         // Get joystick input using readStick helper
         const { x: stickX, y: stickY } = readStick(leftGamepadRef.current, 'left');
@@ -760,9 +763,16 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         } else {
           // If joystick is in deadzone but we have a selection, keep it visible
           if (menuSelectedIndexRef.current !== null && menuSelectedIndexRef.current >= 0) {
+            // Keep rendering the menu with current selection
             renderMenuToCanvas(menuCanvasRef.current, true, menuSelectedIndexRef.current);
             menuTextureRef.current.needsUpdate = true;
           }
+        }
+        
+        // Always update menu texture to ensure it's visible (even when joystick is in deadzone)
+        if (menuSelectedIndexRef.current !== null && menuSelectedIndexRef.current >= 0) {
+          renderMenuToCanvas(menuCanvasRef.current, true, menuSelectedIndexRef.current);
+          menuTextureRef.current.needsUpdate = true;
         }
         
         // Handle joystick click to select
@@ -892,7 +902,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         menuPlaneRef.current.lookAt(cameraRef.current.position);
         
         // Continuously update menu texture to ensure it's visible
-        if (menuCanvasRef.current && menuTextureRef.current) {
+        if (menuCanvasRef.current && menuTextureRef.current && menuSelectedIndexRef.current !== null && menuSelectedIndexRef.current >= 0) {
           // Re-render menu with current selection to ensure texture is up to date
           renderMenuToCanvas(menuCanvasRef.current, true, menuSelectedIndexRef.current);
           menuTextureRef.current.needsUpdate = true;
