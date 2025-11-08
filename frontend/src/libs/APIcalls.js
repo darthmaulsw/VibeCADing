@@ -28,5 +28,5 @@ async function bufferToStream(buffer) {
 export { bufferToStream };
 
 // example use DELETE WHEN DONE TESTING
-  const stream = await bufferToStream("this is a test");
+  const stream = await bufferToStream("11 bombo rasclat pussy clat egg. ");
   await play(stream);

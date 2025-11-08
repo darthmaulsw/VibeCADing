@@ -11,8 +11,10 @@
   "dependencies": {
     "@elevenlabs/elevenlabs-js": "^2.22.0",
     "dotenv": "^17.2.3",
+    "node-record-lpcm16": "^1.0.1",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "wav": "^1.0.2"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
