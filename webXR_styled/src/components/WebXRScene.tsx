@@ -5,7 +5,6 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { loadModel, type LoadedModel } from './utils/modelLoader';
 import { ScaleOverlay } from '../three/overlays/ScaleOverlay';
 import { RotateOverlay } from '../three/overlays/RotateOverlay';
-import { RadialMenu } from './editor/RadialMenu';
 import { ColorPicker } from './ui/ColorPicker';
 
 interface WebXRSceneProps {
@@ -131,11 +130,10 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   const isRotatingRef = useRef(false);
 
   // --- UI State ---
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const [colorPickerPos, setColorPickerPos] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   const menuOpenRef = useRef(false);
+  const menuPosRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   
   // --- 3D Menu in AR ---
   const menuPlaneRef = useRef<THREE.Mesh | null>(null);
@@ -168,7 +166,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     const centerY = canvas.height / 2;
     const innerRadius = 80;
     const outerRadius = 184;
-    const items = ['Rotate', 'Scale', 'Color'];
+    const items = ['Rotate', 'Color'];
     const segmentAngle = (2 * Math.PI) / items.length;
     
     // Draw menu items
@@ -503,7 +501,6 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         // Toggle menu
         const newMenuOpen = !menuOpenRef.current;
         menuOpenRef.current = newMenuOpen;
-        setMenuOpen(newMenuOpen);
         
         if (newMenuOpen) {
           // Position 3D menu in front of controller
@@ -527,7 +524,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
             menuTextureRef.current.needsUpdate = true;
           }
           
-          // Project controller position to screen coordinates (for 2D fallback)
+          // Project controller position to screen coordinates (for color picker positioning)
           const ctrlPos = worldPos(leftCtrlRef.current);
           const vector = new THREE.Vector3();
           vector.copy(ctrlPos);
@@ -535,7 +532,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           
           const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
           const y = (-(vector.y * 0.5) + 0.5) * window.innerHeight;
-          setMenuPos({ x, y });
+          menuPosRef.current = { x, y };
         } else {
           // Hide 3D menu
           if (menuPlaneRef.current) {
@@ -617,7 +614,6 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           const selectedItem = items[menuSelectedIndexRef.current];
           // Close menu and handle selection
           menuOpenRef.current = false;
-          setMenuOpen(false);
           if (menuPlaneRef.current) {
             menuPlaneRef.current.visible = false;
           }
@@ -625,7 +621,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           // Handle menu selection
           if (selectedItem === 'Color') {
             setColorPickerOpen(true);
-            setColorPickerPos(menuPos);
+            setColorPickerPos(menuPosRef.current);
           } else {
             // Handle other menu items if needed
             setColorPickerOpen(false);
@@ -907,20 +903,6 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     }
   }, [xrSession]);
 
-  // Handle menu selection
-  const handleMenuSelect = (item: string) => {
-    if (item === 'Color') {
-      menuOpenRef.current = false;
-      setMenuOpen(false);
-      setColorPickerOpen(true);
-      // Position color picker at menu position
-      setColorPickerPos(menuPos);
-      return;
-    }
-    // Handle other menu items if needed
-    menuOpenRef.current = false;
-    setMenuOpen(false);
-  };
 
   // Handle color selection
   const handleColorSelect = (color: string) => {
@@ -951,7 +933,6 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   return (
     <>
       <div ref={mountRef} style={{ width: '100%', height: '100vh', margin: 0, padding: 0 }} />
-      <RadialMenu isOpen={menuOpen} x={menuPos.x} y={menuPos.y} onSelect={handleMenuSelect} />
       <ColorPicker
         isOpen={colorPickerOpen}
         x={colorPickerPos.x}
