@@ -571,11 +571,15 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         
         // Calculate angle from joystick input
         if (Math.abs(stickX) > stickDeadzone || Math.abs(stickY) > stickDeadzone) {
-          const angle = Math.atan2(-stickY, stickX); // Negative Y because joystick Y is inverted
+          // Calculate angle - flip both X and Y to match menu orientation
+          // Joystick coordinates: right=+X, up=-Y (inverted Y)
+          // We need to flip both to match menu layout
+          const angle = Math.atan2(-stickY, -stickX); // Negate both to fix inversion
           const normalizedAngle = (angle + Math.PI * 2) % (Math.PI * 2);
           
           // Convert angle to menu item index (menu starts at -90 degrees / top)
-          const menuStartAngle = -Math.PI / 2;
+          // Menu items are arranged clockwise starting from top (index 0 = Select at top)
+          const menuStartAngle = -Math.PI / 2; // Top position
           let itemAngle = (normalizedAngle - menuStartAngle + Math.PI * 2) % (Math.PI * 2);
           const segmentAngle = (2 * Math.PI) / items.length;
           let selectedIndex = Math.floor(itemAngle / segmentAngle);
