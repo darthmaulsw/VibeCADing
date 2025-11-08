@@ -1,19 +1,31 @@
 import { useState, useEffect, useRef } from 'react';
-import { ThreeScene } from './components/ThreeScene';
-import { StatusHUD } from './components/StatusHUD';
-import { Inspector } from './components/Inspector';
-import { RadialMenu } from './components/RadialMenu';
-import { ColorPicker } from './components/ColorPicker';
-import { ScanLines } from './components/ScanLines';
-import { CornerBrackets } from './components/CornerBrackets';
-import { TargetingReticle } from './components/TargetingReticle';
-import { DataStream } from './components/DataStream';
-import { DiagnosticPanel } from './components/DiagnosticPanel';
-import { CoordinateOverlay } from './components/CoordinateOverlay';
-import { VoiceBot } from './components/VoiceBot';
+import { ThreeScene } from './components/editor/ThreeScene';
+import { StatusHUD } from './components/ui/StatusHUD';
+import { Inspector } from './components/editor/Inspector';
+import { RadialMenu } from './components/editor/RadialMenu';
+import { ColorPicker } from './components/ui/ColorPicker';
+import { ScanLines } from './components/ui/ScanLines';
+import { CornerBrackets } from './components/ui/CornerBrackets';
+import { TargetingReticle } from './components/ui/TargetingReticle';
+import { DataStream } from './components/ui/DataStream';
+import { DiagnosticPanel } from './components/editor/DiagnosticPanel';
+import { CoordinateOverlay } from './components/ui/CoordinateOverlay';
+import { VoiceBot } from './components/landing/VoiceBot';
+import { LandingScreen } from './components/landing/LandingScreen';
+import { VoiceInteractionModule } from './components/landing/VoiceInteractionModule';
+import { ModelCarousel } from './components/editor/ModelCarousel';
+import { PhotoCapture } from './components/editor/PhotoCapture';
 import { setupScene } from './three/sceneSetup';
 
+type AppScreen = 'landing' | 'photo-capture' | 'voice-interaction' | 'carousel' | 'editor';
+
 function App() {
+  const [screen, setScreen] = useState<AppScreen>('landing');
+  const [models, setModels] = useState<any[]>([
+    { id: '1', name: 'Model_Alpha', thumbnail: '', created_at: '2024-01-15' },
+    { id: '2', name: 'Model_Beta', thumbnail: '', created_at: '2024-01-20' },
+    { id: '3', name: 'Model_Gamma', thumbnail: '', created_at: '2024-01-25' },
+  ]);
   const [mode, setMode] = useState('Edit');
   const [snapAngle] = useState(15);
   const [gridEnabled] = useState(true);
@@ -32,7 +44,7 @@ function App() {
   const interactionManagerRef = useRef<any>(null);
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || screen !== 'editor') return;
 
     const { cleanup, interactionManager } = setupScene(containerRef.current);
     interactionManagerRef.current = interactionManager;
@@ -70,7 +82,7 @@ function App() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('mousemove', handleMouseMove);
     };
-  }, []);
+  }, [screen]);
 
   const handleMenuSelect = (item: string) => {
     if (item === 'Color') {
@@ -120,79 +132,129 @@ function App() {
     }
   };
 
+  const handleLandingSelect = (selectedMode: 'photo' | 'agentic') => {
+    if (selectedMode === 'agentic') {
+      setScreen('voice-interaction');
+    } else if (selectedMode === 'photo') {
+      setScreen('photo-capture');
+    }
+  };
+
+  const handlePhotoCapture = (imageData: string) => {
+    setScreen('editor');
+  };
+
+  const handleVoiceComplete = (action: 'new' | 'edit', model?: any) => {
+    if (action === 'new') {
+      setScreen('editor');
+    } else if (action === 'edit' && model) {
+      setScreen('editor');
+    }
+  };
+
+  const handleModelSelect = (model: any) => {
+    setScreen('editor');
+  };
+
   return (
-    <div className="relative w-full h-screen overflow-hidden" style={{ background: 'var(--bg-deep)' }}>
-      <div ref={containerRef} className="absolute inset-0 w-full h-full" />
+    <div className="relative w-full h-screen" style={{ background: 'var(--bg-deep)', overflow: 'hidden' }}>
+      {screen === 'landing' && <LandingScreen onSelectMode={handleLandingSelect} />}
 
-      <ScanLines />
-      <CornerBrackets />
-      <TargetingReticle x={mousePos.x} y={mousePos.y} visible={showReticle} />
+      {screen === 'photo-capture' && (
+        <PhotoCapture
+          onPhotoCapture={handlePhotoCapture}
+          onBack={() => setScreen('landing')}
+        />
+      )}
 
-      <StatusHUD mode={mode} snapAngle={snapAngle} gridEnabled={gridEnabled} />
+      {screen === 'voice-interaction' && <VoiceInteractionModule onComplete={handleVoiceComplete} models={models} />}
 
-      <Inspector
-        position={position}
-        rotation={rotation}
-        scale={scale}
-        onPositionChange={handlePositionChange}
-        onRotationChange={handleRotationChange}
-        onScaleChange={handleScaleChange}
-      />
+      {screen === 'carousel' && (
+        <div
+          className="absolute inset-0 flex items-center justify-center transition-opacity duration-1000"
+          style={{
+            opacity: screen === 'carousel' ? 1 : 0,
+          }}
+        >
+          <ModelCarousel models={models} onSelectModel={handleModelSelect} />
+        </div>
+      )}
 
-      <RadialMenu isOpen={menuOpen} x={menuPos.x} y={menuPos.y} onSelect={handleMenuSelect} />
-      <ColorPicker
-        isOpen={colorPickerOpen}
-        x={colorPickerPos.x}
-        y={colorPickerPos.y}
-        onSelect={handleColorSelect}
-        onClose={() => setColorPickerOpen(false)}
-      />
+      {screen === 'editor' && (
+        <>
+          <div ref={containerRef} className="absolute inset-0 w-full h-full" />
 
-      <DataStream />
-      <DiagnosticPanel />
-      <CoordinateOverlay position={position} />
-      <VoiceBot />
+          <ScanLines />
+          <CornerBrackets />
+          <TargetingReticle x={mousePos.x} y={mousePos.y} visible={showReticle} />
 
-      <div
-        className="absolute bottom-6 left-32 px-4 py-2 font-mono text-xs"
-        style={{
-          background: 'rgba(14, 18, 36, 0.92)',
-          border: '1px solid rgba(130, 209, 255, 0.3)',
-          borderRadius: '8px',
-          color: '#C1CCE8',
-          boxShadow: '0 0 15px rgba(130, 209, 255, 0.1)',
-        }}
-      >
-        <div className="mb-2 flex items-center gap-2 opacity-80">
-          <div
-            className="w-1.5 h-1.5 rounded-full"
-            style={{ background: '#82D1FF', boxShadow: '0 0 4px #82D1FF' }}
+          <StatusHUD mode={mode} snapAngle={snapAngle} gridEnabled={gridEnabled} />
+
+          <Inspector
+            position={position}
+            rotation={rotation}
+            scale={scale}
+            onPositionChange={handlePositionChange}
+            onRotationChange={handleRotationChange}
+            onScaleChange={handleScaleChange}
           />
-          <span className="text-[10px] font-semibold tracking-wider">CONTROL SCHEMA</span>
-        </div>
-        <div className="space-y-0.5 text-[11px]">
-          <div className="flex items-center gap-2">
-            <span className="opacity-50 w-16">Right-drag</span>
-            <span className="opacity-70">›</span>
-            <span>Orbit Camera</span>
+
+          <RadialMenu isOpen={menuOpen} x={menuPos.x} y={menuPos.y} onSelect={handleMenuSelect} />
+          <ColorPicker
+            isOpen={colorPickerOpen}
+            x={colorPickerPos.x}
+            y={colorPickerPos.y}
+            onSelect={handleColorSelect}
+            onClose={() => setColorPickerOpen(false)}
+          />
+
+          <DataStream />
+          <DiagnosticPanel />
+          <CoordinateOverlay position={position} />
+          <VoiceBot />
+
+          <div
+            className="absolute bottom-6 left-32 px-4 py-2 font-mono text-xs"
+            style={{
+              background: 'rgba(14, 18, 36, 0.92)',
+              border: '1px solid rgba(130, 209, 255, 0.3)',
+              borderRadius: '8px',
+              color: '#C1CCE8',
+              boxShadow: '0 0 15px rgba(130, 209, 255, 0.1)',
+            }}
+          >
+            <div className="mb-2 flex items-center gap-2 opacity-80">
+              <div
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ background: '#82D1FF', boxShadow: '0 0 4px #82D1FF' }}
+              />
+              <span className="text-[10px] font-semibold tracking-wider">CONTROL SCHEMA</span>
+            </div>
+            <div className="space-y-0.5 text-[11px]">
+              <div className="flex items-center gap-2">
+                <span className="opacity-50 w-16">Right-drag</span>
+                <span className="opacity-70">›</span>
+                <span>Orbit Camera</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="opacity-50 w-16">Wheel</span>
+                <span className="opacity-70">›</span>
+                <span>Zoom</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="opacity-50 w-16">M</span>
+                <span className="opacity-70">›</span>
+                <span>Radial Menu</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="opacity-50 w-16">R / S</span>
+                <span className="opacity-70">›</span>
+                <span>Rotate / Scale</span>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="opacity-50 w-16">Wheel</span>
-            <span className="opacity-70">›</span>
-            <span>Zoom</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="opacity-50 w-16">M</span>
-            <span className="opacity-70">›</span>
-            <span>Radial Menu</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="opacity-50 w-16">R / S</span>
-            <span className="opacity-70">›</span>
-            <span>Rotate / Scale</span>
-          </div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }

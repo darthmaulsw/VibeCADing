@@ -1,16 +1,14 @@
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght:600&family=Source+Sans+3:wght@500&family=JetBrains+Mono:wght@500&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --bg-deep: #080A16;
+  --bg-deep: #000000;
   --panel: #0E1224;
-  --accent-a: #82D1FF;
-  --accent-b: #E0A9FF;
-  --accent-c: #C1CCE8;
-  --grid: rgba(180, 196, 232, 0.10);
+  --accent-a: #00D4FF;
+  --accent-b: #00D4FF;
+  --accent-c: #00D4FF;
+  --grid: rgba(0, 212, 255, 0.10);
 }
 
 * {
@@ -20,18 +18,18 @@
 }
 
 body {
-  font-family: 'Source Sans 3', sans-serif;
+  font-family: 'Space Mono', monospace;
   background: var(--bg-deep);
   color: var(--accent-c);
   overflow: hidden;
 }
 
 .font-title {
-  font-family: 'Orbitron', sans-serif;
-  font-weight: 600;
+  font-family: 'Space Mono', monospace;
+  font-weight: 700;
 }
 
 .font-mono {
-  font-family: 'JetBrains Mono', monospace;
-  font-weight: 500;
+  font-family: 'Space Mono', monospace;
+  font-weight: 400;
 }

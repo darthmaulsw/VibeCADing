@@ -50,15 +50,15 @@ export function DataStream() {
               y1={20 + idx * 35}
               x2="20"
               y2={20 + idx * 35}
-              stroke="#82D1FF"
+              stroke="#00D4FF"
               strokeWidth="1"
             />
-            <circle cx="20" cy={20 + idx * 35} r="2" fill="#82D1FF" />
+            <circle cx="20" cy={20 + idx * 35} r="2" fill="#00D4FF" />
           </g>
         ))}
       </svg>
 
-      <div className="font-mono text-xs" style={{ color: '#82D1FF', marginLeft: '30px' }}>
+      <div className="font-mono text-xs" style={{ color: '#00D4FF', marginLeft: '30px' }}>
         {lines.map((line) => (
           <div
             key={line.id}
@@ -74,7 +74,7 @@ export function DataStream() {
 
       <div
         className="text-[9px] opacity-50 font-mono tracking-widest mt-4"
-        style={{ color: '#82D1FF', marginLeft: '30px' }}
+        style={{ color: '#00D4FF', marginLeft: '30px' }}
       >
         DATA STREAM
       </div>

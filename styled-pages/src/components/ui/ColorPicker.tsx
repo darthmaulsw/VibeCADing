@@ -29,8 +29,8 @@ export function ColorPicker({ isOpen, x, y, onSelect, onClose }: ColorPickerProp
   useEffect(() => {
     if (!isOpen) return;
     const interval = setInterval(() => {
-      setRotation((r) => (r + 1) % 360);
-    }, 30);
+      setRotation((r) => (r + 0.4) % 360);
+    }, 50);
     return () => clearInterval(interval);
   }, [isOpen]);
 
@@ -46,6 +46,11 @@ export function ColorPicker({ isOpen, x, y, onSelect, onClose }: ColorPickerProp
   const centerY = radius;
   const spectrumSegments = 36;
 
+  const saturationPanelX = x - 250;
+  const saturationPanelY = y - 120;
+  const lightnessPanelX = x + 250;
+  const lightnessPanelY = y + 120;
+
   const handleSpectrumClick = (hue: number) => {
     setSelectedHue(hue);
     setShowSliders(true);
@@ -54,7 +59,7 @@ export function ColorPicker({ isOpen, x, y, onSelect, onClose }: ColorPickerProp
   return (
     <>
       <div
-        className="absolute pointer-events-auto"
+        className="absolute pointer-events-auto z-50"
         style={{
           left: x,
           top: y,
@@ -77,7 +82,7 @@ export function ColorPicker({ isOpen, x, y, onSelect, onClose }: ColorPickerProp
               cy={centerY}
               r={radius - 10}
               fill="none"
-              stroke="#82D1FF"
+              stroke="#00D4FF"
               strokeWidth="1"
               opacity="0.3"
               strokeDasharray="5 10"
@@ -90,7 +95,7 @@ export function ColorPicker({ isOpen, x, y, onSelect, onClose }: ColorPickerProp
               cy={centerY}
               r={radius - 25}
               fill="none"
-              stroke="#82D1FF"
+              stroke="#00D4FF"
               strokeWidth="0.5"
               opacity="0.2"
               strokeDasharray="3 6"
@@ -110,7 +115,7 @@ export function ColorPicker({ isOpen, x, y, onSelect, onClose }: ColorPickerProp
                 y1={y1}
                 x2={x2}
                 y2={y2}
-                stroke="#82D1FF"
+                stroke="#00D4FF"
                 strokeWidth="0.5"
                 opacity="0.15"
               />
@@ -148,7 +153,7 @@ export function ColorPicker({ isOpen, x, y, onSelect, onClose }: ColorPickerProp
                 <path
                   d={`M ${x1} ${y1} L ${x2} ${y2} A ${outerR} ${outerR} 0 0 1 ${x3} ${y3} L ${x4} ${y4} A ${innerR} ${innerR} 0 0 0 ${x1} ${y1}`}
                   fill={color}
-                  stroke={isSelected ? '#82D1FF' : 'rgba(130, 209, 255, 0.2)'}
+                  stroke={isSelected ? '#00D4FF' : 'rgba(130, 209, 255, 0.2)'}
                   strokeWidth={isSelected ? 2 : 0.5}
                   className="cursor-pointer transition-all"
                   style={{
@@ -168,7 +173,7 @@ export function ColorPicker({ isOpen, x, y, onSelect, onClose }: ColorPickerProp
           style={{
             background: `hsl(${selectedHue}, ${saturation}%, ${lightness}%)`,
             border: '2px solid rgba(130, 209, 255, 0.6)',
-            color: lightness > 50 ? '#0E1224' : '#82D1FF',
+            color: lightness > 50 ? '#0E1224' : '#00D4FF',
             boxShadow: `0 0 20px hsl(${selectedHue}, ${saturation}%, ${lightness}%)`,
           }}
         >
@@ -177,44 +182,69 @@ export function ColorPicker({ isOpen, x, y, onSelect, onClose }: ColorPickerProp
 
         <div
           className="absolute -bottom-8 left-1/2 -translate-x-1/2 font-mono text-[9px] opacity-50 tracking-widest whitespace-nowrap"
-          style={{ color: '#82D1FF' }}
+          style={{ color: '#00D4FF' }}
         >
           COLOR SPECTRUM
         </div>
       </div>
 
       {showSliders && (
-        <div
-          className="absolute pointer-events-auto"
-          style={{
-            left: x + 180,
-            top: y,
-            transform: 'translateY(-50%)',
-            opacity: isOpen ? 1 : 0,
-            transition: 'opacity 240ms linear',
-          }}
-        >
+        <>
+          <svg
+            className="absolute inset-0 pointer-events-none z-40"
+            style={{ width: '100vw', height: '100vh', left: 0, top: 0 }}
+          >
+            <line
+              x1={x}
+              y1={y}
+              x2={saturationPanelX + 100}
+              y2={saturationPanelY + 60}
+              stroke="#00D4FF"
+              strokeWidth="1"
+              strokeDasharray="4 2"
+              opacity="0.4"
+            />
+            <circle cx={saturationPanelX + 100} cy={saturationPanelY + 60} r="3" fill="#00D4FF" opacity="0.6" />
+
+            <line
+              x1={x}
+              y1={y}
+              x2={lightnessPanelX + 100}
+              y2={lightnessPanelY + 60}
+              stroke="#00D4FF"
+              strokeWidth="1"
+              strokeDasharray="4 2"
+              opacity="0.4"
+            />
+            <circle cx={lightnessPanelX + 100} cy={lightnessPanelY + 60} r="3" fill="#00D4FF" opacity="0.6" />
+          </svg>
+
           <div
-            className="p-6 font-mono"
+            className="absolute pointer-events-auto z-50"
             style={{
-              background: 'rgba(14, 18, 36, 0.95)',
-              border: '1px solid rgba(130, 209, 255, 0.3)',
-              borderRadius: '8px',
-              boxShadow: '0 0 20px rgba(130, 209, 255, 0.1)',
-              minWidth: '200px',
+              left: saturationPanelX,
+              top: saturationPanelY,
+              opacity: isOpen ? 1 : 0,
+              transition: 'opacity 300ms linear 100ms',
             }}
           >
-            <div className="text-[10px] tracking-widest mb-4 opacity-50" style={{ color: '#82D1FF' }}>
-              SHADE CONTROL
-            </div>
+            <div
+              className="p-5 font-mono"
+              style={{
+                background: 'rgba(14, 18, 36, 0.95)',
+                border: '1px solid rgba(130, 209, 255, 0.3)',
+                borderRadius: '8px',
+                boxShadow: '0 0 20px rgba(130, 209, 255, 0.1)',
+                width: '200px',
+              }}
+            >
+              <div className="text-[10px] tracking-widest mb-4 opacity-50" style={{ color: '#00D4FF' }}>
+                SATURATION
+              </div>
 
-            <div className="space-y-6">
-              <div>
+              <div className="mb-3">
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-[9px] tracking-wider opacity-70" style={{ color: '#82D1FF' }}>
-                    SATURATION
-                  </label>
-                  <span className="text-[9px] opacity-50" style={{ color: '#82D1FF' }}>
+                  <span className="text-[9px] opacity-50" style={{ color: '#00D4FF' }}>
                     {saturation}%
                   </span>
                 </div>
@@ -225,35 +255,71 @@ export function ColorPicker({ isOpen, x, y, onSelect, onClose }: ColorPickerProp
                     max="100"
                     value={saturation}
                     onChange={(e) => setSaturation(Number(e.target.value))}
-                    className="absolute inset-0 w-full opacity-0 cursor-pointer"
+                    className="absolute inset-0 w-full opacity-0 cursor-pointer z-10"
                   />
                   <div
                     className="absolute left-0 top-0 h-full transition-all"
                     style={{
                       width: `${saturation}%`,
-                      background: '#82D1FF',
-                      boxShadow: '0 0 8px #82D1FF',
+                      background: '#00D4FF',
+                      boxShadow: '0 0 8px #00D4FF',
                     }}
                   />
                   <div
-                    className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full transition-all"
+                    className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full transition-all pointer-events-none"
                     style={{
                       left: `${saturation}%`,
                       transform: 'translate(-50%, -50%)',
-                      background: '#82D1FF',
+                      background: '#00D4FF',
                       border: '1px solid rgba(14, 18, 36, 0.8)',
-                      boxShadow: '0 0 8px #82D1FF',
+                      boxShadow: '0 0 8px #00D4FF',
                     }}
                   />
                 </div>
               </div>
 
-              <div>
+              <div className="pt-3 border-t" style={{ borderColor: 'rgba(130, 209, 255, 0.2)' }}>
+                <div className="text-[8px] tracking-wider opacity-50 mb-2" style={{ color: '#00D4FF' }}>
+                  PREVIEW
+                </div>
+                <div
+                  className="w-full h-6 rounded"
+                  style={{
+                    background: `hsl(${selectedHue}, ${saturation}%, 60%)`,
+                    border: '1px solid rgba(130, 209, 255, 0.3)',
+                    boxShadow: `0 0 12px hsl(${selectedHue}, ${saturation}%, 60%)`,
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div
+            className="absolute pointer-events-auto z-50"
+            style={{
+              left: lightnessPanelX,
+              top: lightnessPanelY,
+              opacity: isOpen ? 1 : 0,
+              transition: 'opacity 300ms linear 200ms',
+            }}
+          >
+            <div
+              className="p-5 font-mono"
+              style={{
+                background: 'rgba(14, 18, 36, 0.95)',
+                border: '1px solid rgba(130, 209, 255, 0.3)',
+                borderRadius: '8px',
+                boxShadow: '0 0 20px rgba(130, 209, 255, 0.1)',
+                width: '200px',
+              }}
+            >
+              <div className="text-[10px] tracking-widest mb-4 opacity-50" style={{ color: '#00D4FF' }}>
+                LIGHTNESS
+              </div>
+
+              <div className="mb-3">
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-[9px] tracking-wider opacity-70" style={{ color: '#82D1FF' }}>
-                    LIGHTNESS
-                  </label>
-                  <span className="text-[9px] opacity-50" style={{ color: '#82D1FF' }}>
+                  <span className="text-[9px] opacity-50" style={{ color: '#00D4FF' }}>
                     {lightness}%
                   </span>
                 </div>
@@ -264,45 +330,45 @@ export function ColorPicker({ isOpen, x, y, onSelect, onClose }: ColorPickerProp
                     max="100"
                     value={lightness}
                     onChange={(e) => setLightness(Number(e.target.value))}
-                    className="absolute inset-0 w-full opacity-0 cursor-pointer"
+                    className="absolute inset-0 w-full opacity-0 cursor-pointer z-10"
                   />
                   <div
                     className="absolute left-0 top-0 h-full transition-all"
                     style={{
                       width: `${lightness}%`,
-                      background: '#82D1FF',
-                      boxShadow: '0 0 8px #82D1FF',
+                      background: '#00D4FF',
+                      boxShadow: '0 0 8px #00D4FF',
                     }}
                   />
                   <div
-                    className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full transition-all"
+                    className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full transition-all pointer-events-none"
                     style={{
                       left: `${lightness}%`,
                       transform: 'translate(-50%, -50%)',
-                      background: '#82D1FF',
+                      background: '#00D4FF',
                       border: '1px solid rgba(14, 18, 36, 0.8)',
-                      boxShadow: '0 0 8px #82D1FF',
+                      boxShadow: '0 0 8px #00D4FF',
                     }}
                   />
                 </div>
               </div>
 
-              <div className="pt-2 border-t" style={{ borderColor: 'rgba(130, 209, 255, 0.2)' }}>
-                <div className="text-[8px] tracking-wider opacity-50 mb-2" style={{ color: '#82D1FF' }}>
+              <div className="pt-3 border-t" style={{ borderColor: 'rgba(130, 209, 255, 0.2)' }}>
+                <div className="text-[8px] tracking-wider opacity-50 mb-2" style={{ color: '#00D4FF' }}>
                   PREVIEW
                 </div>
                 <div
-                  className="w-full h-8 rounded"
+                  className="w-full h-6 rounded"
                   style={{
-                    background: `hsl(${selectedHue}, ${saturation}%, ${lightness}%)`,
+                    background: `hsl(${selectedHue}, 80%, ${lightness}%)`,
                     border: '1px solid rgba(130, 209, 255, 0.3)',
-                    boxShadow: `0 0 12px hsl(${selectedHue}, ${saturation}%, ${lightness}%)`,
+                    boxShadow: `0 0 12px hsl(${selectedHue}, 80%, ${lightness}%)`,
                   }}
                 />
               </div>
             </div>
           </div>
-        </div>
+        </>
       )}
     </>
   );

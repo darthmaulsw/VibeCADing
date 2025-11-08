@@ -29,21 +29,21 @@ export function Inspector({
   return (
     <div className="absolute right-6 top-24">
       <svg width="360" height="400" className="absolute top-0 right-0 pointer-events-none">
-        <line x1="360" y1="0" x2="360" y2="400" stroke="#82D1FF" strokeWidth="1" opacity="0.2" />
-        <line x1="340" y1="50" x2="360" y2="50" stroke="#82D1FF" strokeWidth="1" opacity="0.4" />
-        <circle cx="340" cy="50" r="3" fill="#82D1FF" opacity="0.8" />
+        <line x1="360" y1="0" x2="360" y2="400" stroke="#00D4FF" strokeWidth="1" opacity="0.2" />
+        <line x1="340" y1="50" x2="360" y2="50" stroke="#00D4FF" strokeWidth="1" opacity="0.4" />
+        <circle cx="340" cy="50" r="3" fill="#00D4FF" opacity="0.8" />
 
-        <line x1="340" y1="120" x2="360" y2="120" stroke="#82D1FF" strokeWidth="1" opacity="0.4" />
-        <circle cx="340" cy="120" r="3" fill="#82D1FF" opacity="0.8" />
+        <line x1="340" y1="120" x2="360" y2="120" stroke="#00D4FF" strokeWidth="1" opacity="0.4" />
+        <circle cx="340" cy="120" r="3" fill="#00D4FF" opacity="0.8" />
 
-        <line x1="340" y1="190" x2="360" y2="190" stroke="#82D1FF" strokeWidth="1" opacity="0.4" />
-        <circle cx="340" cy="190" r="3" fill="#82D1FF" opacity="0.8" />
+        <line x1="340" y1="190" x2="360" y2="190" stroke="#00D4FF" strokeWidth="1" opacity="0.4" />
+        <circle cx="340" cy="190" r="3" fill="#00D4FF" opacity="0.8" />
       </svg>
 
       <div style={{ marginRight: '30px' }}>
         <div
           className="mb-6 font-mono text-[9px] opacity-50 tracking-widest text-right"
-          style={{ color: '#82D1FF' }}
+          style={{ color: '#00D4FF' }}
         >
           OBJECT INSPECTOR
         </div>
@@ -55,7 +55,7 @@ export function Inspector({
               onClick={() => setActiveTab(tab.name)}
               className="text-[10px] font-mono tracking-wider transition-opacity"
               style={{
-                color: '#82D1FF',
+                color: '#00D4FF',
                 opacity: activeTab === tab.name ? 1 : 0.4,
               }}
             >
@@ -78,7 +78,7 @@ export function Inspector({
             </>
           )}
           {activeTab === 'Geometry' && (
-            <div className="font-mono text-xs" style={{ color: '#82D1FF' }}>
+            <div className="font-mono text-xs" style={{ color: '#00D4FF' }}>
               <div className="mb-4">
                 <div className="text-[10px] opacity-40 mb-1">TYPE</div>
                 <div className="tracking-wider">BOX_GEOMETRY</div>
@@ -90,7 +90,7 @@ export function Inspector({
             </div>
           )}
           {activeTab === 'Material' && (
-            <div className="font-mono text-xs" style={{ color: '#82D1FF' }}>
+            <div className="font-mono text-xs" style={{ color: '#00D4FF' }}>
               <div className="mb-4">
                 <div className="text-[10px] opacity-40 mb-1">SHADER</div>
                 <div className="tracking-wider text-xs">STANDARD_PBR</div>
@@ -126,13 +126,13 @@ function Vec3Field({
 }) {
   return (
     <div className="font-mono">
-      <div className="text-[10px] opacity-40 mb-2 tracking-wider" style={{ color: '#82D1FF' }}>
+      <div className="text-[10px] opacity-40 mb-2 tracking-wider" style={{ color: '#00D4FF' }}>
         {label.toUpperCase()}
       </div>
       <div className="grid grid-cols-3 gap-4">
         {(['X', 'Y', 'Z'] as const).map((axis, i) => (
           <div key={axis} className="text-right">
-            <div className="text-[9px] opacity-50 mb-1" style={{ color: '#82D1FF' }}>{axis}</div>
+            <div className="text-[9px] opacity-50 mb-1" style={{ color: '#00D4FF' }}>{axis}</div>
             <input
               type="number"
               value={value[i].toFixed(2)}
@@ -144,8 +144,8 @@ function Vec3Field({
               step={step}
               className="w-full px-2 py-1 text-xs font-mono text-right bg-transparent border-b"
               style={{
-                borderColor: 'rgba(130, 209, 255, 0.3)',
-                color: '#82D1FF',
+                borderColor: 'rgba(0, 212, 255, 0.3)',
+                color: '#00D4FF',
                 outline: 'none',
               }}
             />
