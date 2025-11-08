@@ -1,195 +1,52 @@
-.api-test-page {
-  display: flex;
-  flex-direction: column;
-  gap: 2rem;
-}
-
-.test-section {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
-  padding: 2rem;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.test-section h2 {
-  margin: 0 0 1.5rem 0;
-  color: #667eea;
-  font-size: 1.5rem;
-}
-
-.test-controls {
+.api-test {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  margin-bottom: 1.5rem;
-}
-
-.test-controls textarea {
-  min-height: 100px;
-  resize: vertical;
-  font-size: 0.95rem;
-}
-
-.test-controls button {
-  align-self: flex-start;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  padding: 0.8em 1.5em;
-  font-size: 1rem;
-  font-weight: 600;
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.test-controls button:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-  border-color: transparent;
-}
-
-.test-controls button:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.test-result {
-  margin-top: 1rem;
-  animation: fadeIn 0.3s ease-in;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.test-result h3 {
-  margin: 0 0 1rem 0;
-  color: #a78bfa;
-  font-size: 1.2rem;
-}
-
-.test-result h4 {
-  margin: 1.5rem 0 0.75rem 0;
-  color: #c4b5fd;
-  font-size: 1rem;
-}
-
-.test-result pre {
-  background-color: rgba(0, 0, 0, 0.3);
   padding: 1rem;
-  border-radius: 8px;
-  overflow-x: auto;
-  font-size: 0.9rem;
-  line-height: 1.5;
-  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.audio-player {
-  margin-top: 1.5rem;
-  padding: 1rem;
-  background: rgba(102, 126, 234, 0.1);
-  border-radius: 8px;
-  border: 1px solid rgba(102, 126, 234, 0.3);
+.test-input {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
-.audio-player audio {
+.test-input textarea {
   width: 100%;
-  margin-top: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-family: inherit;
 }
 
-.code-display {
-  margin-top: 1.5rem;
+.test-input button {
+  padding: 0.5rem 1rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #f0f0f0;
+  cursor: pointer;
+}
+
+.test-input button:hover:not(:disabled) {
+  background: #e0e0e0;
+}
+
+.test-input button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.response-box {
   padding: 1rem;
-  background: rgba(118, 75, 162, 0.1);
-  border-radius: 8px;
-  border: 1px solid rgba(118, 75, 162, 0.3);
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #f9f9f9;
 }
 
-.code-display .code-block {
-  background-color: rgba(0, 0, 0, 0.4);
-  margin-top: 0.5rem;
-  font-family: 'Courier New', 'Consolas', monospace;
-  font-size: 0.85rem;
-}
-
-.summary-display {
-  margin-top: 1.5rem;
-  padding: 1.5rem;
-  background: rgba(167, 139, 250, 0.1);
-  border-radius: 8px;
-  border: 1px solid rgba(167, 139, 250, 0.3);
-}
-
-.summary-display p {
-  line-height: 1.7;
-  color: rgba(255, 255, 255, 0.9);
+.response-box pre {
   margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: monospace;
+  font-size: 0.9rem;
 }
-
-@media (prefers-color-scheme: light) {
-  .test-section {
-    background: rgba(0, 0, 0, 0.02);
-    border: 1px solid rgba(0, 0, 0, 0.1);
-  }
-
-  .test-section h2 {
-    color: #5a67d8;
-  }
-
-  .test-result h3 {
-    color: #6b46c1;
-  }
-
-  .test-result h4 {
-    color: #7c3aed;
-  }
-
-  .test-result pre {
-    background-color: rgba(0, 0, 0, 0.05);
-    border: 1px solid rgba(0, 0, 0, 0.1);
-  }
-
-  .audio-player {
-    background: rgba(102, 126, 234, 0.05);
-    border: 1px solid rgba(102, 126, 234, 0.2);
-  }
-
-  .code-display {
-    background: rgba(118, 75, 162, 0.05);
-    border: 1px solid rgba(118, 75, 162, 0.2);
-  }
-
-  .code-display .code-block {
-    background-color: rgba(0, 0, 0, 0.08);
-  }
-
-  .summary-display {
-    background: rgba(167, 139, 250, 0.05);
-    border: 1px solid rgba(167, 139, 250, 0.2);
-  }
-
-  .summary-display p {
-    color: rgba(0, 0, 0, 0.85);
-  }
-}
-
-@media (max-width: 768px) {
-  .test-section {
-    padding: 1.5rem;
-  }
-
-  .test-section h2 {
-    font-size: 1.3rem;
-  }
-
-  .test-controls button {
-    width: 100%;
-  }
-}
-
