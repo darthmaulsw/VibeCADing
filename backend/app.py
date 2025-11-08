@@ -5,9 +5,11 @@ import os
 import tempfile
 import shutil
 from werkzeug.utils import secure_filename
+from dotenv import load_dotenv
 
 app = Flask(__name__)
 CORS(app)
+load_dotenv()
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
@@ -17,8 +19,29 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# Initialize Gradio client
-client = Client("tencent/Hunyuan3D-2")
+# Lazy-initialize Gradio client with simple retries
+_client = None
+
+def get_client():
+    global _client
+    if _client is not None:
+        return _client
+    import time as _time
+    last_err = None
+    hf_token = os.getenv('HUGGINGFACE_TOKEN')
+    for _ in range(3):
+        try:
+            if hf_token:
+                _c = Client("tencent/Hunyuan3D-2", hf_token=hf_token)
+            else:
+                _c = Client("tencent/Hunyuan3D-2")
+            _client = _c
+            return _client
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+            _time.sleep(2)
+    # If still failing, raise the last error
+    raise last_err
 
 @app.route('/api/hunyuan/generate', methods=['POST'])
 def generate_hunyuan_model():
@@ -83,6 +106,9 @@ def generate_hunyuan_model():
             
             print(f"[{time.strftime('%H:%M:%S')}] Parameters: steps={steps}, guidance_scale={guidance_scale}, seed={seed}, octree_resolution={octree_resolution}")
             print(f"[{time.strftime('%H:%M:%S')}] Preparing to call Gradio API...")
+            
+            # Initialize client lazily here (handles slow /config)
+            client = get_client()
             
             # Call Gradio API with handle_file for each image
             # Use main image as fallback for missing multi-view images

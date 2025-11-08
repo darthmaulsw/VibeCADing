@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { InteractionManager } from './interactions';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
 export function setupScene(container: HTMLElement) {
   const scene = new THREE.Scene();
@@ -44,6 +45,74 @@ export function setupScene(container: HTMLElement) {
 
   const interactionManager = new InteractionManager(scene, camera, renderer, cube);
 
+  // GLB loader support
+  const loader = new GLTFLoader();
+  let currentModel: THREE.Object3D | null = null;
+
+  function clearCurrentModel() {
+    if (!currentModel) return;
+    scene.remove(currentModel);
+    currentModel.traverse((obj: THREE.Object3D) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        const mesh = obj as THREE.Mesh;
+        if (mesh.geometry) mesh.geometry.dispose();
+        const material = mesh.material as THREE.Material | THREE.Material[] | undefined;
+        if (material) {
+          if (Array.isArray(material)) material.forEach((mat) => mat.dispose());
+          else material.dispose();
+        }
+      }
+    });
+    currentModel = null;
+  }
+
+  async function loadModelFromUrl(url: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      loader.load(
+        url,
+        (gltf) => {
+          const mock = scene.getObjectByName('mockCube');
+          if (mock) scene.remove(mock);
+
+          clearCurrentModel();
+
+          const root = gltf.scene || gltf.scenes?.[0];
+          if (!root) {
+            reject(new Error('No scene in GLTF'));
+            return;
+          }
+
+          const box = new THREE.Box3().setFromObject(root);
+          const size = new THREE.Vector3();
+          box.getSize(size);
+          const center = new THREE.Vector3();
+          box.getCenter(center);
+
+          root.position.x += -center.x;
+          root.position.y += -center.y;
+          root.position.z += -center.z;
+
+          const maxAxis = Math.max(size.x, size.y, size.z) || 1;
+          const targetSize = 1.5;
+          const scale = targetSize / maxAxis;
+          root.scale.setScalar(scale);
+          root.position.y = 0.75;
+
+          root.traverse((obj: THREE.Object3D) => {
+            obj.castShadow = true;
+            (obj as THREE.Mesh).receiveShadow = true;
+          });
+
+          currentModel = root;
+          scene.add(root);
+          resolve();
+        },
+        undefined,
+        (err) => reject(err)
+      );
+    });
+  }
+
   const handleResize = () => {
     camera.aspect = container.clientWidth / container.clientHeight;
     camera.updateProjectionMatrix();
@@ -66,7 +135,9 @@ export function setupScene(container: HTMLElement) {
       interactionManager.dispose();
       renderer.dispose();
       container.removeChild(renderer.domElement);
+      clearCurrentModel();
     },
     interactionManager,
+    loadModelFromUrl,
   };
 }

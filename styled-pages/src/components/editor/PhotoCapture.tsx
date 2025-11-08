@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
-import { Camera, Upload, X, Download, Loader2 } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react'
+import { Camera, Upload, X, Download, Loader2 } from 'lucide-react'
+import { ThreeScene } from './ThreeScene'
 
 interface PhotoCaptureProps {
   onPhotoCapture?: (imageData: string) => void;
@@ -33,6 +34,7 @@ export function PhotoCapture({ onBack }: PhotoCaptureProps) {
   const [generating, setGenerating] = useState<boolean>(false);
   const [generationStatus, setGenerationStatus] = useState<string>('');
   const [modelUrl, setModelUrl] = useState<string | null>(null);
+  const [showThree, setShowThree] = useState<boolean>(false)
 
   useEffect(() => {
     if (stream && videoRef.current && captureMode === 'camera') {
@@ -350,9 +352,26 @@ export function PhotoCapture({ onBack }: PhotoCaptureProps) {
       }
       
       if (data.success && extractedModelUrl) {
-        updateStatus('🎉 3D model generation completed successfully!');
-        updateStatus(`📦 GLB model URL: ${extractedModelUrl}`);
-        setModelUrl(extractedModelUrl);
+        updateStatus('🎉 3D model generation completed successfully!')
+        updateStatus(`📦 GLB model URL: ${extractedModelUrl}`)
+        setModelUrl(extractedModelUrl)
+        // Switch to the Three.js scene view first
+        setShowThree(true)
+        try {
+          // Stash URL globally in case the event is missed before mount
+          (window as unknown as { VIBECAD_LAST_GLB_URL?: string }).VIBECAD_LAST_GLB_URL = extractedModelUrl
+          // Dispatch after next frame to ensure ThreeScene is mounted
+          requestAnimationFrame(() => {
+            try {
+              window.dispatchEvent(new CustomEvent('vibecad:load-glb', { detail: { url: extractedModelUrl } }))
+              updateStatus('🛰️ Sending model to 3D scene...')
+            } catch {
+              updateStatus('⚠️ Could not dispatch model load event')
+            }
+          })
+        } catch {
+          updateStatus('⚠️ Could not prepare model load')
+        }
       } else if (data.error) {
         updateStatus(`❌ Error: ${data.error}`);
         setModelUrl(null);
@@ -407,6 +426,14 @@ export function PhotoCapture({ onBack }: PhotoCaptureProps) {
   const hasMinimumViews = () => {
     return !!capturedViews.front;
   };
+
+  if (showThree) {
+    return (
+      <div className="absolute inset-0" style={{ background: '#000' }}>
+        <ThreeScene />
+      </div>
+    )
+  }
 
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-auto" style={{ background: '#000' }}>
@@ -864,35 +891,35 @@ export function PhotoCapture({ onBack }: PhotoCaptureProps) {
 
           <div className="flex flex-col items-center gap-4 mt-6">
             <div className="flex justify-center gap-4 flex-wrap">
-              <button
+            <button
                 onClick={() => {
                   setCapturedViews(prev => ({ ...prev, [currentView]: preview }));
                   setPreview(null);
                   setCaptureMode('select');
                 }}
-                className="font-mono transition-all duration-300"
-                style={{
-                  padding: '16px 48px',
-                  background: 'rgba(0, 212, 255, 0.2)',
-                  border: '1px solid #00D4FF',
-                  color: '#00D4FF',
-                }}
-              >
+              className="font-mono transition-all duration-300"
+              style={{
+                padding: '16px 48px',
+                background: 'rgba(0, 212, 255, 0.2)',
+                border: '1px solid #00D4FF',
+                color: '#00D4FF',
+              }}
+            >
                 <div className="text-lg tracking-wider">[SAVE VIEW]</div>
-              </button>
+            </button>
 
-              <button
-                onClick={resetCapture}
-                className="font-mono transition-all duration-300"
-                style={{
-                  padding: '16px 48px',
-                  background: '#000',
-                  border: '1px solid #00D4FF',
-                  color: '#00D4FF',
-                }}
-              >
-                <div className="text-lg tracking-wider">[RETAKE]</div>
-              </button>
+            <button
+              onClick={resetCapture}
+              className="font-mono transition-all duration-300"
+              style={{
+                padding: '16px 48px',
+                background: '#000',
+                border: '1px solid #00D4FF',
+                color: '#00D4FF',
+              }}
+            >
+              <div className="text-lg tracking-wider">[RETAKE]</div>
+            </button>
 
               <button
                 onClick={() => {
