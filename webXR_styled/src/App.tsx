@@ -1,6 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import { ThreeScene } from './components/editor/ThreeScene';
-import { WebXRScene, type WebXRSceneRef } from './components/WebXRScene';
 import { StatusHUD } from './components/ui/StatusHUD';
 import { Inspector } from './components/editor/Inspector';
 import { RadialMenu } from './components/editor/RadialMenu';
@@ -16,8 +14,8 @@ import { LandingScreen } from './components/landing/LandingScreen';
 import { VoiceInteractionModule } from './components/landing/VoiceInteractionModule';
 import { ModelCarousel } from './components/editor/ModelCarousel';
 import { PhotoCapture } from './components/editor/PhotoCapture';
+import { WebXRScene } from './components/WebXRScene';
 import { setupScene } from './three/sceneSetup';
-import { X } from 'lucide-react';
 
 type AppScreen = 'landing' | 'photo-capture' | 'voice-interaction' | 'carousel' | 'editor';
 
@@ -41,27 +39,34 @@ function App() {
   const [scale, setScale] = useState<[number, number, number]>([1, 1, 1]);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [showReticle, setShowReticle] = useState(false);
-  const [isARMode, setIsARMode] = useState(false);
+
+  // WebXR state
+  const [isXRSupported, setIsXRSupported] = useState<boolean | null>(null);
   const [xrSession, setXrSession] = useState<XRSession | null>(null);
-  const [xrSupported, setXrSupported] = useState(false);
+  const [isInAR, setIsInAR] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const webXRSceneRef = useRef<WebXRSceneRef>(null);
   const interactionManagerRef = useRef<any>(null);
 
-  // Check WebXR support
-  useEffect(() => {
+  // Check WebXR AR support
+  const checkXRSupport = async () => {
     if (navigator.xr) {
-      navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
-        setXrSupported(supported);
-      }).catch(() => {
-        setXrSupported(false);
-      });
+      try {
+        const supported = await navigator.xr.isSessionSupported('immersive-ar');
+        setIsXRSupported(supported);
+        return supported;
+      } catch (error) {
+        console.error('Error checking XR support:', error);
+        setIsXRSupported(false);
+        return false;
+      }
     }
-  }, []);
+    setIsXRSupported(false);
+    return false;
+  };
 
-  // Handle WebXR session
-  const enterAR = async () => {
+  // Start AR session
+  const startXRSession = async () => {
     if (!navigator.xr) {
       alert('WebXR is not supported in this browser');
       return;
@@ -70,31 +75,39 @@ function App() {
     try {
       const session = await navigator.xr.requestSession('immersive-ar', {
         requiredFeatures: ['local-floor'],
-        optionalFeatures: ['bounded-floor', 'hand-tracking'],
+        optionalFeatures: ['bounded-floor', 'hand-tracking', 'light-estimation']
       });
+      
       setXrSession(session);
-      setIsARMode(true);
-
+      setIsInAR(true);
+      
       session.addEventListener('end', () => {
         setXrSession(null);
-        setIsARMode(false);
+        setIsInAR(false);
       });
     } catch (error) {
-      console.error('Failed to start AR session:', error);
-      alert('Failed to start AR session. Make sure you have a compatible device and browser.');
+      console.error('Error starting AR session:', error);
+      alert('Failed to start AR session. Make sure your Quest is connected and in developer mode.');
     }
   };
 
-  const exitAR = () => {
+  // Stop XR session
+  const stopXRSession = () => {
     if (xrSession) {
       xrSession.end();
     }
-    setIsARMode(false);
-    setXrSession(null);
+    setIsInAR(false);
   };
 
+  // Check XR support when editor screen is active
   useEffect(() => {
-    if (!containerRef.current || screen !== 'editor' || isARMode) return;
+    if (screen === 'editor') {
+      checkXRSupport();
+    }
+  }, [screen]);
+
+  useEffect(() => {
+    if (!containerRef.current || screen !== 'editor' || isInAR) return;
 
     const { cleanup, interactionManager } = setupScene(containerRef.current);
     interactionManagerRef.current = interactionManager;
@@ -132,7 +145,7 @@ function App() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('mousemove', handleMouseMove);
     };
-  }, [screen, isARMode]);
+  }, [screen, isInAR]);
 
   const handleMenuSelect = (item: string) => {
     if (item === 'Color') {
@@ -156,48 +169,30 @@ function App() {
   };
 
   const handleColorSelect = (color: string) => {
-    if (isARMode && webXRSceneRef.current?.setObjectColor) {
-      webXRSceneRef.current.setObjectColor(color);
-    } else if (interactionManagerRef.current) {
+    if (interactionManagerRef.current) {
       interactionManagerRef.current.setCubeColor(color);
     }
   };
 
   const handlePositionChange = (pos: [number, number, number]) => {
     setPosition(pos);
-    if (isARMode && webXRSceneRef.current?.setObjectTransform) {
-      webXRSceneRef.current.setObjectTransform(pos, undefined, undefined);
-    } else if (interactionManagerRef.current) {
+    if (interactionManagerRef.current) {
       interactionManagerRef.current.setCubeTransform(pos, undefined, undefined);
     }
   };
 
   const handleRotationChange = (rot: [number, number, number]) => {
     setRotation(rot);
-    if (isARMode && webXRSceneRef.current?.setObjectTransform) {
-      webXRSceneRef.current.setObjectTransform(undefined, rot, undefined);
-    } else if (interactionManagerRef.current) {
+    if (interactionManagerRef.current) {
       interactionManagerRef.current.setCubeTransform(undefined, rot, undefined);
     }
   };
 
   const handleScaleChange = (scl: [number, number, number]) => {
     setScale(scl);
-    if (isARMode && webXRSceneRef.current?.setObjectTransform) {
-      webXRSceneRef.current.setObjectTransform(undefined, undefined, scl);
-    } else if (interactionManagerRef.current) {
+    if (interactionManagerRef.current) {
       interactionManagerRef.current.setCubeTransform(undefined, undefined, scl);
     }
-  };
-
-  const handleWebXRTransformChange = (transform: {
-    position: [number, number, number];
-    rotation: [number, number, number];
-    scale: [number, number, number];
-  }) => {
-    setPosition(transform.position);
-    setRotation(transform.rotation);
-    setScale(transform.scale);
   };
 
   const handleLandingSelect = (selectedMode: 'photo' | 'agentic') => {
@@ -250,129 +245,173 @@ function App() {
 
       {screen === 'editor' && (
         <>
-          {/* Render appropriate scene based on AR mode */}
-          {isARMode ? (
-            <WebXRScene
-              ref={webXRSceneRef}
-              xrSession={xrSession}
-              onTransformChange={handleWebXRTransformChange}
-              initialTransform={{
-                position,
-                rotation,
-                scale,
-              }}
-            />
+          {isInAR ? (
+            <WebXRScene xrSession={xrSession} />
           ) : (
             <div ref={containerRef} className="absolute inset-0 w-full h-full" />
           )}
 
-          {/* All overlays remain visible in both modes */}
-          <ScanLines />
-          <CornerBrackets />
-          {!isARMode && <TargetingReticle x={mousePos.x} y={mousePos.y} visible={showReticle} />}
-
-          <StatusHUD mode={mode} snapAngle={snapAngle} gridEnabled={gridEnabled} />
-
-          <Inspector
-            position={position}
-            rotation={rotation}
-            scale={scale}
-            onPositionChange={handlePositionChange}
-            onRotationChange={handleRotationChange}
-            onScaleChange={handleScaleChange}
-          />
-
-          <RadialMenu isOpen={menuOpen} x={menuPos.x} y={menuPos.y} onSelect={handleMenuSelect} />
-          <ColorPicker
-            isOpen={colorPickerOpen}
-            x={colorPickerPos.x}
-            y={colorPickerPos.y}
-            onSelect={handleColorSelect}
-            onClose={() => setColorPickerOpen(false)}
-          />
-
-          <DataStream />
-          <DiagnosticPanel />
-          <CoordinateOverlay position={position} />
-          <VoiceBot />
-
-          {/* AR Mode Toggle Button */}
-          {!isARMode ? (
-            <button
-              onClick={enterAR}
-              disabled={!xrSupported}
-              className="absolute top-6 right-6 px-6 py-3 font-mono text-sm transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+          {/* Enter AR Button */}
+          {!isInAR && (
+            <div
+              className="absolute top-6 right-6 z-50"
               style={{
-                background: xrSupported ? 'rgba(0, 212, 255, 0.2)' : 'rgba(100, 100, 100, 0.2)',
-                border: `1px solid ${xrSupported ? '#00D4FF' : '#666'}`,
-                color: xrSupported ? '#00D4FF' : '#666',
+                background: 'rgba(14, 18, 36, 0.92)',
+                border: '1px solid rgba(130, 209, 255, 0.3)',
                 borderRadius: '8px',
-                boxShadow: xrSupported ? '0 0 20px rgba(0, 212, 255, 0.3)' : 'none',
+                padding: '12px 20px',
+                boxShadow: '0 0 15px rgba(130, 209, 255, 0.1)',
               }}
             >
-              <div className="flex items-center gap-2">
-                <span className="text-xs tracking-wider">
-                  {xrSupported ? '[ENTER AR]' : '[AR NOT SUPPORTED]'}
-                </span>
+              <div className="font-mono text-xs mb-2" style={{ color: '#00D4FF' }}>
+                <div className="text-[9px] opacity-50 tracking-widest mb-1">
+                  WEBXR STATUS
+                </div>
+                <div className="text-[10px] opacity-70">
+                  {isXRSupported === null
+                    ? 'Checking...'
+                    : isXRSupported
+                    ? '✅ AR Supported'
+                    : '❌ AR Not Supported'}
+                </div>
               </div>
-            </button>
-          ) : (
-            <button
-              onClick={exitAR}
-              className="absolute top-6 right-6 px-6 py-3 font-mono text-sm transition-all duration-300 flex items-center gap-2"
-              style={{
-                background: 'rgba(255, 68, 68, 0.2)',
-                border: '1px solid #FF4444',
-                color: '#FF4444',
-                borderRadius: '8px',
-                boxShadow: '0 0 20px rgba(255, 68, 68, 0.3)',
-              }}
-            >
-              <X className="w-4 h-4" />
-              <span className="text-xs tracking-wider">[EXIT AR]</span>
-            </button>
+              <button
+                onClick={startXRSession}
+                disabled={!isXRSupported}
+                className="font-mono text-sm transition-all duration-300"
+                style={{
+                  padding: '8px 16px',
+                  background: isXRSupported
+                    ? 'rgba(0, 212, 255, 0.2)'
+                    : 'rgba(100, 100, 100, 0.2)',
+                  border: `1px solid ${isXRSupported ? '#00D4FF' : 'rgba(130, 209, 255, 0.2)'}`,
+                  color: isXRSupported ? '#00D4FF' : 'rgba(130, 209, 255, 0.4)',
+                  borderRadius: '4px',
+                  cursor: isXRSupported ? 'pointer' : 'not-allowed',
+                  opacity: isXRSupported ? 1 : 0.5,
+                }}
+              >
+                [ENTER AR]
+              </button>
+            </div>
           )}
 
-          <div
-            className="absolute bottom-6 left-32 px-4 py-2 font-mono text-xs"
-            style={{
-              background: 'rgba(14, 18, 36, 0.92)',
-              border: '1px solid rgba(130, 209, 255, 0.3)',
-              borderRadius: '8px',
-              color: '#C1CCE8',
-              boxShadow: '0 0 15px rgba(130, 209, 255, 0.1)',
-            }}
-          >
-            <div className="mb-2 flex items-center gap-2 opacity-80">
+          {/* Exit AR Button - Centered */}
+          {isInAR && (
+            <div
+              className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none"
+            >
               <div
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ background: '#82D1FF', boxShadow: '0 0 4px #82D1FF' }}
+                style={{
+                  background: 'rgba(14, 18, 36, 0.92)',
+                  border: '1px solid rgba(255, 68, 68, 0.3)',
+                  borderRadius: '8px',
+                  padding: '12px 20px',
+                  boxShadow: '0 0 15px rgba(255, 68, 68, 0.1)',
+                  pointerEvents: 'auto',
+                }}
+              >
+                <div className="font-mono text-xs mb-2" style={{ color: '#FF4444' }}>
+                  <div className="text-[9px] opacity-50 tracking-widest mb-1">
+                    AR SESSION ACTIVE
+                  </div>
+                  <div className="text-[10px] opacity-70">🟢 In AR Mode</div>
+                </div>
+                <button
+                  onClick={stopXRSession}
+                  className="font-mono text-sm transition-all duration-300"
+                  style={{
+                    padding: '8px 16px',
+                    background: 'rgba(255, 68, 68, 0.2)',
+                    border: '1px solid #FF4444',
+                    color: '#FF4444',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  [EXIT AR]
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!isInAR && (
+            <>
+              <ScanLines />
+              <CornerBrackets />
+              <TargetingReticle x={mousePos.x} y={mousePos.y} visible={showReticle} />
+            </>
+          )}
+
+          {!isInAR && (
+            <>
+              <StatusHUD mode={mode} snapAngle={snapAngle} gridEnabled={gridEnabled} />
+
+              <Inspector
+                position={position}
+                rotation={rotation}
+                scale={scale}
+                onPositionChange={handlePositionChange}
+                onRotationChange={handleRotationChange}
+                onScaleChange={handleScaleChange}
               />
-              <span className="text-[10px] font-semibold tracking-wider">CONTROL SCHEMA</span>
-            </div>
-            <div className="space-y-0.5 text-[11px]">
-              <div className="flex items-center gap-2">
-                <span className="opacity-50 w-16">Right-drag</span>
-                <span className="opacity-70">›</span>
-                <span>Orbit Camera</span>
+
+              <RadialMenu isOpen={menuOpen} x={menuPos.x} y={menuPos.y} onSelect={handleMenuSelect} />
+              <ColorPicker
+                isOpen={colorPickerOpen}
+                x={colorPickerPos.x}
+                y={colorPickerPos.y}
+                onSelect={handleColorSelect}
+                onClose={() => setColorPickerOpen(false)}
+              />
+
+              <DataStream />
+              <DiagnosticPanel />
+              <CoordinateOverlay position={position} />
+              <VoiceBot />
+
+              <div
+                className="absolute bottom-6 left-32 px-4 py-2 font-mono text-xs"
+                style={{
+                  background: 'rgba(14, 18, 36, 0.92)',
+                  border: '1px solid rgba(130, 209, 255, 0.3)',
+                  borderRadius: '8px',
+                  color: '#C1CCE8',
+                  boxShadow: '0 0 15px rgba(130, 209, 255, 0.1)',
+                }}
+              >
+                <div className="mb-2 flex items-center gap-2 opacity-80">
+                  <div
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ background: '#82D1FF', boxShadow: '0 0 4px #82D1FF' }}
+                  />
+                  <span className="text-[10px] font-semibold tracking-wider">CONTROL SCHEMA</span>
+                </div>
+                <div className="space-y-0.5 text-[11px]">
+                  <div className="flex items-center gap-2">
+                    <span className="opacity-50 w-16">Right-drag</span>
+                    <span className="opacity-70">›</span>
+                    <span>Orbit Camera</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="opacity-50 w-16">Wheel</span>
+                    <span className="opacity-70">›</span>
+                    <span>Zoom</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="opacity-50 w-16">M</span>
+                    <span className="opacity-70">›</span>
+                    <span>Radial Menu</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="opacity-50 w-16">R / S</span>
+                    <span className="opacity-70">›</span>
+                    <span>Rotate / Scale</span>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="opacity-50 w-16">Wheel</span>
-                <span className="opacity-70">›</span>
-                <span>Zoom</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="opacity-50 w-16">M</span>
-                <span className="opacity-70">›</span>
-                <span>Radial Menu</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="opacity-50 w-16">R / S</span>
-                <span className="opacity-70">›</span>
-                <span>Rotate / Scale</span>
-              </div>
-            </div>
-          </div>
+            </>
+          )}
         </>
       )}
     </div>
