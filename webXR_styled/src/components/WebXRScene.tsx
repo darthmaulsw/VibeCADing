@@ -374,6 +374,15 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   const isBPressedRight = (gp?: Gamepad) => !!(gp && gp.buttons?.[5]?.pressed);
   // Left Y button (button 5 on left controller)
   const isYPressedLeft = (gp?: Gamepad) => !!(gp && gp.buttons?.[5]?.pressed);
+  // Thumbstick click detection (button 11 or trigger as fallback)
+  const isThumbstickClick = (gp?: Gamepad) => {
+    if (!gp || !gp.buttons) return false;
+    // Try button 11 (common stick click index)
+    if (gp.buttons[11]?.pressed) return true;
+    // Also try button 0 (trigger) as fallback if not grabbing
+    if (gp.buttons[0]?.pressed && !isGrabPressed(gp)) return true;
+    return false;
+  };
 
   // Laser setup/teardown
   const ensureLaser = (scene: THREE.Scene) => {
@@ -767,31 +776,18 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           }
         }
         
-        // Handle joystick click to select - try multiple button indices
-        // Quest controllers: button 11 might be stick click, but could also be 0 (trigger) or others
-        let stickClickDetected = false;
-        if (gp.buttons) {
-          // Try button 11 (common stick click index)
-          if (gp.buttons[11]?.pressed) stickClickDetected = true;
-          // Also try button 0 (trigger) as fallback
-          else if (gp.buttons[0]?.pressed && !leftGrab) stickClickDetected = true;
-        }
+        // Handle joystick click to select
+        const currentStickClick = isThumbstickClick(gp);
         
-        // Check for joystick click - use ref to track previous state across frames
-        const currentStickClick = stickClickDetected;
-        const wasStickClickPressed = prevMenuStickClickRef.current;
-        
-        if (currentStickClick && !wasStickClickPressed && menuSelectedIndexRef.current !== null && menuSelectedIndexRef.current >= 0) {
+        if (currentStickClick && !prevMenuStickClickRef.current && menuSelectedIndexRef.current != null && menuSelectedIndexRef.current >= 0) {
           const selectedItem = items[menuSelectedIndexRef.current];
-          // Close menu and handle selection
-          menuOpenRef.current = false;
-          if (menuPlaneRef.current) {
-            menuPlaneRef.current.visible = false;
-          }
           
-          // Handle menu selection
+          // Close menu plane
+          menuOpenRef.current = false;
+          if (menuPlaneRef.current) menuPlaneRef.current.visible = false;
+          
           if (selectedItem === 'Color') {
-            // Open color picker in AR
+            // Show color picker plane
             if (colorPickerPlaneRef.current && leftCtrlRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current && cameraRef.current) {
               const ctrlPos = worldPos(leftCtrlRef.current);
               const ctrlDir = worldDir(leftCtrlRef.current);
@@ -802,10 +798,8 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
               colorPickerPlaneRef.current.lookAt(cameraRef.current.position);
               colorPickerPlaneRef.current.visible = true;
               
-              // Reset color picker state
               colorPickerStateRef.current = { hue: 200, saturation: 80, lightness: 60, rotation: 0 };
               
-              // Render initial color picker
               renderColorPickerToCanvas(
                 colorPickerCanvasRef.current,
                 true,
@@ -818,17 +812,19 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
             }
             setColorPickerOpen(true);
             setColorPickerPos(menuPosRef.current);
-          } else {
-            // Handle other menu items if needed
+          } else if (selectedItem === 'Rotate') {
+            // Optional: prime rotate overlay or state if you want
+            setColorPickerOpen(false);
+          } else if (selectedItem === 'Scale') {
             setColorPickerOpen(false);
           }
         }
         
-        // Update previous stick click state for next frame
+        // Update edge detector once per frame
         prevMenuStickClickRef.current = currentStickClick;
       } else {
-        // Reset previous stick click state when menu is closed
-        prevMenuStickClickRef.current = false;
+        // Menu closed
+        prevMenuStickClickRef.current = isThumbstickClick(leftGamepadRef.current ?? undefined);
       }
       
       // Handle color picker interaction
