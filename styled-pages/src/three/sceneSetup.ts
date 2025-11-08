@@ -105,6 +105,10 @@ export function setupScene(container: HTMLElement) {
 
           currentModel = root;
           scene.add(root);
+          
+          // Update interaction manager to target the new model
+          interactionManager.setTargetObject(root);
+          
           resolve();
         },
         undefined,
@@ -128,10 +132,34 @@ export function setupScene(container: HTMLElement) {
   }
   animate();
 
+  // Handle GLB load events from PhotoCapture
+  const handleLoadGlb = (event: Event) => {
+    const customEvent = event as CustomEvent<{ url: string }>;
+    const url = customEvent.detail?.url;
+    if (url) {
+      console.log('[ThreeScene] Received GLB load event:', url);
+      loadModelFromUrl(url).catch((err) => {
+        console.error('[ThreeScene] Failed to load GLB:', err);
+      });
+    }
+  };
+  window.addEventListener('vibecad:load-glb', handleLoadGlb);
+
+  // Check for stashed URL on mount (in case event was dispatched before listener was ready)
+  const stashedUrl = (window as unknown as { VIBECAD_LAST_GLB_URL?: string }).VIBECAD_LAST_GLB_URL;
+  if (stashedUrl) {
+    console.log('[ThreeScene] Found stashed GLB URL on mount:', stashedUrl);
+    loadModelFromUrl(stashedUrl).catch((err) => {
+      console.error('[ThreeScene] Failed to load stashed GLB:', err);
+    });
+    delete (window as unknown as { VIBECAD_LAST_GLB_URL?: string }).VIBECAD_LAST_GLB_URL;
+  }
+
   return {
     cleanup: () => {
       cancelAnimationFrame(animationId);
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('vibecad:load-glb', handleLoadGlb);
       interactionManager.dispose();
       renderer.dispose();
       container.removeChild(renderer.domElement);

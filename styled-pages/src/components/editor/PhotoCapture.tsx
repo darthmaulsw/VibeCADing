@@ -1,6 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Camera, Upload, X, Download, Loader2 } from 'lucide-react'
-import { ThreeScene } from './ThreeScene'
 
 interface PhotoCaptureProps {
   onPhotoCapture?: (imageData: string) => void;
@@ -9,7 +8,7 @@ interface PhotoCaptureProps {
 
 type ViewType = 'front' | 'back' | 'left' | 'right';
 
-export function PhotoCapture({ onBack }: PhotoCaptureProps) {
+export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
   const [captureMode, setCaptureMode] = useState<'select' | 'camera' | 'upload'>('select');
   const [currentView, setCurrentView] = useState<ViewType>('front');
   const [preview, setPreview] = useState<string | null>(null);
@@ -34,7 +33,6 @@ export function PhotoCapture({ onBack }: PhotoCaptureProps) {
   const [generating, setGenerating] = useState<boolean>(false);
   const [generationStatus, setGenerationStatus] = useState<string>('');
   const [modelUrl, setModelUrl] = useState<string | null>(null);
-  const [showThree, setShowThree] = useState<boolean>(false)
 
   useEffect(() => {
     if (stream && videoRef.current && captureMode === 'camera') {
@@ -352,26 +350,20 @@ export function PhotoCapture({ onBack }: PhotoCaptureProps) {
       }
       
       if (data.success && extractedModelUrl) {
-        updateStatus('🎉 3D model generation completed successfully!')
-        updateStatus(`📦 GLB model URL: ${extractedModelUrl}`)
-        setModelUrl(extractedModelUrl)
-        // Switch to the Three.js scene view first
-        setShowThree(true)
-        try {
-          // Stash URL globally in case the event is missed before mount
-          (window as unknown as { VIBECAD_LAST_GLB_URL?: string }).VIBECAD_LAST_GLB_URL = extractedModelUrl
-          // Dispatch after next frame to ensure ThreeScene is mounted
-          requestAnimationFrame(() => {
-            try {
-              window.dispatchEvent(new CustomEvent('vibecad:load-glb', { detail: { url: extractedModelUrl } }))
-              updateStatus('🛰️ Sending model to 3D scene...')
-            } catch {
-              updateStatus('⚠️ Could not dispatch model load event')
-            }
-          })
-        } catch {
-          updateStatus('⚠️ Could not prepare model load')
-        }
+        updateStatus('🎉 3D model generation completed successfully!');
+        updateStatus(`📦 GLB model URL: ${extractedModelUrl}`);
+        setModelUrl(extractedModelUrl);
+        
+        // Stash URL globally for the editor to pick up
+        (window as unknown as { VIBECAD_LAST_GLB_URL?: string }).VIBECAD_LAST_GLB_URL = extractedModelUrl;
+        updateStatus('🛰️ Transitioning to editor...');
+        
+        // Transition to the full editor view after a short delay to show the success message
+        setTimeout(() => {
+          if (onPhotoCapture) {
+            onPhotoCapture(extractedModelUrl);
+          }
+        }, 1000);
       } else if (data.error) {
         updateStatus(`❌ Error: ${data.error}`);
         setModelUrl(null);
@@ -426,14 +418,6 @@ export function PhotoCapture({ onBack }: PhotoCaptureProps) {
   const hasMinimumViews = () => {
     return !!capturedViews.front;
   };
-
-  if (showThree) {
-    return (
-      <div className="absolute inset-0" style={{ background: '#000' }}>
-        <ThreeScene />
-      </div>
-    )
-  }
 
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-auto" style={{ background: '#000' }}>
