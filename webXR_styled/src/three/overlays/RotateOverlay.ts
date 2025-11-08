@@ -4,7 +4,7 @@ export class RotateOverlay {
   private scene: THREE.Scene;
   private group = new THREE.Group();
   private isVisible = false;
-  private ringRadius = 1.2;
+  private ringRadius = 0.3; // Reduced by 75% (was 1.2, now 0.3)
   private spinSpeed = 0.015;
   private baseScale = 1.0;
 
