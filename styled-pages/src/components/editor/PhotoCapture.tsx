@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Camera, Upload, X } from 'lucide-react';
+import { Camera, Upload, X, Download, Loader2 } from 'lucide-react';
 
 interface PhotoCaptureProps {
   onPhotoCapture: (imageData: string) => void;
@@ -12,6 +12,11 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Hunyuan 3D Model Generation State
+  const [generating, setGenerating] = useState<boolean>(false);
+  const [generationStatus, setGenerationStatus] = useState<string>('');
+  const [modelUrl, setModelUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (stream && videoRef.current && captureMode === 'camera') {
@@ -34,7 +39,7 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
 
   const stopCamera = () => {
     if (stream) {
-      stream.getTracks().forEach(track => track.stop());
+      stream.getTracks().forEach((track: MediaStreamTrack) => track.stop());
       setStream(null);
     }
     setCaptureMode('select');
@@ -56,7 +61,7 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: any) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
@@ -72,6 +77,140 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
   const confirmPhoto = () => {
     if (preview) {
       onPhotoCapture(preview);
+    }
+  };
+
+  // Convert base64 data URL to File
+  const dataURLtoFile = (dataurl: string, filename: string): File => {
+    const arr = dataurl.split(',');
+    const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new File([u8arr], filename, { type: mime });
+  };
+
+  // Generate 3D model from captured photo
+  const generate3DModel = async () => {
+    if (!preview) return;
+
+    setGenerating(true);
+    setGenerationStatus('');
+    setModelUrl(null);
+
+    const updateStatus = (message: string) => {
+      const timestamp = new Date().toLocaleTimeString();
+      setGenerationStatus((prev: string) => prev ? `${prev}\n[${timestamp}] ${message}` : `[${timestamp}] ${message}`);
+      console.log(`[Hunyuan] ${message}`);
+    };
+
+    try {
+      updateStatus('🚀 Starting 3D model generation...');
+      updateStatus('📤 Preparing image for upload...');
+
+      // Convert base64 preview to File
+      const imageFile = dataURLtoFile(preview, 'captured-photo.jpg');
+
+      const formData = new FormData();
+      formData.append('image', imageFile);
+      formData.append('caption', ''); // Optional caption
+
+      updateStatus('📡 Sending request to backend server...');
+      updateStatus('⏳ Waiting for server response (this may take several minutes)...');
+
+      const startTime = Date.now();
+      const res = await fetch('http://localhost:8000/api/hunyuan/generate', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      updateStatus(`📥 Received response after ${elapsed} seconds`);
+      updateStatus(`📊 Response status: ${res.status}`);
+
+      updateStatus('📝 Reading response data...');
+      const text = await res.text();
+      
+      updateStatus('🔍 Parsing response...');
+      let data;
+      if (!text) {
+        data = { error: 'Empty response from server', status: res.status };
+        updateStatus('⚠️ Warning: Empty response received');
+      } else {
+        try {
+          data = JSON.parse(text);
+          updateStatus('✅ Successfully parsed JSON response');
+        } catch (e) {
+          data = { error: 'Invalid JSON response', raw: text.substring(0, 500), status: res.status };
+          updateStatus('⚠️ Warning: Could not parse JSON, showing raw response');
+        }
+      }
+
+      // Extract model URL - handle Gradio response format
+      const extractModelUrl = (obj: any): string | null => {
+        if (!obj) return null;
+        
+        if (typeof obj === 'string') {
+          if (obj.startsWith('/tmp/gradio/')) {
+            return `https://tencent-hunyuan3d-2.hf.space/file=${obj}`;
+          }
+          return obj;
+        }
+        
+        if (typeof obj === 'object' && obj !== null) {
+          if ('__type__' in obj && 'value' in obj) {
+            const url = obj.value;
+            if (typeof url === 'string') {
+              if (url.startsWith('/tmp/gradio/')) {
+                return `https://tencent-hunyuan3d-2.hf.space/file=${url}`;
+              }
+              return url;
+            }
+          } else if ('value' in obj) {
+            const url = obj.value;
+            if (typeof url === 'string') {
+              if (url.startsWith('/tmp/gradio/')) {
+                return `https://tencent-hunyuan3d-2.hf.space/file=${url}`;
+              }
+              return url;
+            }
+          }
+        }
+        
+        return null;
+      };
+      
+      let extractedModelUrl: string | null = null;
+      if (data.model_url) {
+        extractedModelUrl = extractModelUrl(data.model_url);
+      }
+      
+      if (!extractedModelUrl && data.result && Array.isArray(data.result) && data.result.length > 0) {
+        extractedModelUrl = extractModelUrl(data.result[0]);
+      }
+      
+      if (data.success && extractedModelUrl) {
+        updateStatus('🎉 3D model generation completed successfully!');
+        updateStatus(`📦 GLB model URL: ${extractedModelUrl}`);
+        setModelUrl(extractedModelUrl);
+      } else if (data.error) {
+        updateStatus(`❌ Error: ${data.error}`);
+        setModelUrl(null);
+      } else {
+        updateStatus('⚠️ Response received but no model URL found');
+        setModelUrl(null);
+      }
+      
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      updateStatus(`❌ Request failed: ${errorMessage}`);
+      setModelUrl(null);
+    } finally {
+      setGenerating(false);
+      updateStatus('🏁 Request completed');
     }
   };
 
@@ -364,32 +503,103 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
             })}
           </div>
 
-          <div className="flex justify-center gap-4 mt-6">
-            <button
-              onClick={confirmPhoto}
-              className="font-mono transition-all duration-300"
-              style={{
-                padding: '16px 48px',
-                background: 'rgba(0, 212, 255, 0.2)',
-                border: '1px solid #00D4FF',
-                color: '#00D4FF',
-              }}
-            >
-              <div className="text-lg tracking-wider">[CONFIRM]</div>
-            </button>
+          <div className="flex flex-col items-center gap-4 mt-6">
+            <div className="flex justify-center gap-4">
+              <button
+                onClick={confirmPhoto}
+                className="font-mono transition-all duration-300"
+                style={{
+                  padding: '16px 48px',
+                  background: 'rgba(0, 212, 255, 0.2)',
+                  border: '1px solid #00D4FF',
+                  color: '#00D4FF',
+                }}
+              >
+                <div className="text-lg tracking-wider">[CONFIRM]</div>
+              </button>
+
+              <button
+                onClick={resetCapture}
+                className="font-mono transition-all duration-300"
+                style={{
+                  padding: '16px 48px',
+                  background: '#000',
+                  border: '1px solid #00D4FF',
+                  color: '#00D4FF',
+                }}
+              >
+                <div className="text-lg tracking-wider">[RETAKE]</div>
+              </button>
+            </div>
 
             <button
-              onClick={resetCapture}
-              className="font-mono transition-all duration-300"
+              onClick={generate3DModel}
+              disabled={generating}
+              className="font-mono transition-all duration-300 flex items-center gap-3"
               style={{
                 padding: '16px 48px',
-                background: '#000',
+                background: generating ? 'rgba(0, 212, 255, 0.1)' : 'rgba(0, 212, 255, 0.2)',
                 border: '1px solid #00D4FF',
                 color: '#00D4FF',
+                opacity: generating ? 0.6 : 1,
+                cursor: generating ? 'not-allowed' : 'pointer',
               }}
             >
-              <div className="text-lg tracking-wider">[RETAKE]</div>
+              {generating ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <div className="text-lg tracking-wider">[GENERATING...]</div>
+                </>
+              ) : (
+                <div className="text-lg tracking-wider">[GENERATE 3D MODEL]</div>
+              )}
             </button>
+
+            {generationStatus && (
+              <div
+                className="font-mono text-xs mt-4 p-4 overflow-y-auto"
+                style={{
+                  maxWidth: '800px',
+                  maxHeight: '200px',
+                  background: '#000',
+                  border: '1px solid #00D4FF',
+                  color: '#00D4FF',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {generationStatus}
+              </div>
+            )}
+
+            {modelUrl && (
+              <div
+                className="font-mono mt-4 p-4 flex flex-col items-center gap-3"
+                style={{
+                  background: 'rgba(0, 212, 255, 0.1)',
+                  border: '1px solid #00D4FF',
+                  color: '#00D4FF',
+                }}
+              >
+                <div className="text-sm tracking-wider">📥 3D MODEL READY</div>
+                <a
+                  href={modelUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 transition-all duration-300 hover:opacity-70"
+                  style={{
+                    padding: '12px 24px',
+                    background: 'rgba(0, 212, 255, 0.2)',
+                    border: '1px solid #00D4FF',
+                    color: '#00D4FF',
+                    textDecoration: 'none',
+                  }}
+                >
+                  <Download className="w-4 h-4" />
+                  <span className="text-sm tracking-wider">DOWNLOAD GLB FILE</span>
+                </a>
+              </div>
+            )}
           </div>
         </div>
       )}
