@@ -13,7 +13,7 @@ interface WebXRSceneProps {
    ========================= */
 const START_MAX_SIZE_M = 1.0;   // largest dimension after import
 const SCALE_MIN = 0.05;
-const SCALE_MAX = 10;
+const SCALE_MAX = 25;
 
 // Two-hand scaling
 const MIN_HAND_DISTANCE = 0.05; // 5 cm floor
