@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import './ApiTestPage.css'
-import MediaButton from '../libs/test'
+import MicToFlask from '../libs/test'
 
 function ApiTestPage() {
   // OpenSCAD State
@@ -381,20 +381,13 @@ function ApiTestPage() {
           </div>
         </div>
       </div>
-      {/* Media Recorder Test Section */}
       <div className="api-section">
         <h2>Media Recorder Test</h2>
         <div className="input-output-container">
           <div className="input-box">
             <label style={{ display: 'block', fontWeight: 600, marginBottom: '0.5rem' }}>Quick Mic Button</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <MediaButton />
-              <span style={{ fontSize: '0.85rem', color: '#555' }}>Starts recording and auto-stops on silence; saves automatically.</span>
-            </div>
-          </div>
-          <div className="output-box" style={{ display: 'flex', alignItems: 'center' }}>
-            <div style={{ fontSize: '0.9rem', color: '#444' }}>
-              Works best in Chrome/Edge on localhost or HTTPS. Allow mic permissions when prompted.
+              <MicToFlask endpoint="/api/transcribe"/>
             </div>
           </div>
         </div>

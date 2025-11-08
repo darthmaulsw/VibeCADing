@@ -20,6 +20,10 @@ def specifications(prompt):
         AT MOST 60 words, keep it completely understandable. 
         
         Here's the user request: {prompt}
+
+		Based on the user prompt search for at least 5 - 10 images online that fit the description and use them as reference for generating the specifications.
+        
+		IMPORTANT : USE YOUR TOOLS
     """
 
 def generate(specifications):
