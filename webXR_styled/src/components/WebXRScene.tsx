@@ -549,7 +549,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
       // Handle menu navigation with left joystick
       if (menuOpenRef.current && leftGamepadRef.current && menuCanvasRef.current && menuTextureRef.current) {
         const gp = leftGamepadRef.current;
-        const items = ['Select', 'Move', 'Rotate', 'Scale', 'Color', 'Subdivide', 'Material', 'Export'];
+        const items = ['Color', 'Rotate', 'Scale'];
         
         // Get joystick input - try different axis indices (Quest controllers use 2 and 3 for left stick)
         // axes 0,1 might be thumbstick, axes 2,3 might be touchpad or different mapping
