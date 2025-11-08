@@ -574,7 +574,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           // Calculate angle from joystick
           // Joystick coordinates: right=+X, up=-Y (inverted Y in gamepad API)
           // We need to account for the coordinate system difference
-          const angle = Math.atan2(stickY, -stickX); // Standard atan2
+          const angle = Math.atan2(stickX, stickY); // Standard atan2
           // Rotate by 180 degrees to fix the inversion
           const rotatedAngle = (angle + Math.PI) % (Math.PI * 2);
           const normalizedAngle = (rotatedAngle + Math.PI * 2) % (Math.PI * 2);
