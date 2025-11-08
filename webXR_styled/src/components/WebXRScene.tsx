@@ -136,6 +136,11 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const [colorPickerPos, setColorPickerPos] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   const menuOpenRef = useRef(false);
+  
+  // --- 3D Menu in AR ---
+  const menuPlaneRef = useRef<THREE.Mesh | null>(null);
+  const menuCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const menuTextureRef = useRef<THREE.CanvasTexture | null>(null);
 
   // Helpers
   const setUniformScale = (obj: THREE.Object3D, s: number) => {
@@ -146,6 +151,63 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   const worldDir = (obj: THREE.Object3D) => {
     const d = new THREE.Vector3(0, 0, -1);
     return d.applyQuaternion(obj.getWorldQuaternion(new THREE.Quaternion())).normalize();
+  };
+
+  // Render menu to canvas
+  const renderMenuToCanvas = (canvas: HTMLCanvasElement, isOpen: boolean) => {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Clear canvas
+    ctx.fillStyle = 'rgba(14, 18, 36, 0.95)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    if (!isOpen) return;
+    
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    const innerRadius = 80;
+    const outerRadius = 184;
+    const items = ['Select', 'Move', 'Rotate', 'Scale', 'Color', 'Subdivide', 'Material', 'Export'];
+    const segmentAngle = (2 * Math.PI) / items.length;
+    
+    // Draw menu items
+    items.forEach((item, i) => {
+      const startAngle = i * segmentAngle - Math.PI / 2;
+      const endAngle = (i + 1) * segmentAngle - Math.PI / 2;
+      
+      // Draw arc segment
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, outerRadius, startAngle, endAngle);
+      ctx.arc(centerX, centerY, innerRadius, endAngle, startAngle, true);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(14, 18, 36, 0.7)';
+      ctx.fill();
+      ctx.strokeStyle = '#00D4FF';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      
+      // Draw text
+      const textAngle = startAngle + segmentAngle / 2;
+      const textRadius = (innerRadius + outerRadius) / 2;
+      const textX = centerX + Math.cos(textAngle) * textRadius;
+      const textY = centerY + Math.sin(textAngle) * textRadius;
+      
+      ctx.fillStyle = '#00D4FF';
+      ctx.font = 'bold 16px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(item, textX, textY);
+    });
+    
+    // Draw decorative circles
+    ctx.strokeStyle = '#00D4FF';
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.4;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, outerRadius + 20, 0, 2 * Math.PI);
+    ctx.stroke();
+    ctx.globalAlpha = 1.0;
   };
 
   // "Grab" = trigger (0) OR grip/squeeze (1)
@@ -234,6 +296,30 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     /* ---------- Rotate overlay ---------- */
     const rotateOverlay = new RotateOverlay(scene);
     rotateOverlayRef.current = rotateOverlay;
+
+    /* ---------- 3D Menu Plane for AR ---------- */
+    const menuCanvas = document.createElement('canvas');
+    menuCanvas.width = 600;
+    menuCanvas.height = 600;
+    menuCanvasRef.current = menuCanvas;
+    
+    const menuTexture = new THREE.CanvasTexture(menuCanvas);
+    menuTexture.needsUpdate = true;
+    menuTextureRef.current = menuTexture;
+    
+    const menuPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.6, 0.6),
+      new THREE.MeshBasicMaterial({
+        map: menuTexture,
+        transparent: true,
+        side: THREE.DoubleSide,
+        alphaTest: 0.1,
+      })
+    );
+    menuPlane.visible = false;
+    menuPlane.name = 'MenuPlane';
+    scene.add(menuPlane);
+    menuPlaneRef.current = menuPlane;
 
     /* ---------- Load model (meters) ---------- */
     const loadModelMeters = async () => {
@@ -380,7 +466,25 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         setMenuOpen(newMenuOpen);
         
         if (newMenuOpen) {
-          // Project controller position to screen coordinates
+          // Position 3D menu in front of controller
+          if (menuPlaneRef.current && leftCtrlRef.current && menuCanvasRef.current && menuTextureRef.current) {
+            const ctrlPos = worldPos(leftCtrlRef.current);
+            const ctrlDir = worldDir(leftCtrlRef.current);
+            const menuDistance = 0.4; // 40cm in front of controller
+            
+            menuPlaneRef.current.position.copy(ctrlPos);
+            menuPlaneRef.current.position.add(ctrlDir.multiplyScalar(menuDistance));
+            
+            // Make menu face camera
+            menuPlaneRef.current.lookAt(cameraRef.current.position);
+            menuPlaneRef.current.visible = true;
+            
+            // Render menu to canvas and update texture
+            renderMenuToCanvas(menuCanvasRef.current, true);
+            menuTextureRef.current.needsUpdate = true;
+          }
+          
+          // Project controller position to screen coordinates (for 2D fallback)
           const ctrlPos = worldPos(leftCtrlRef.current);
           const vector = new THREE.Vector3();
           vector.copy(ctrlPos);
@@ -390,8 +494,29 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           const y = (-(vector.y * 0.5) + 0.5) * window.innerHeight;
           setMenuPos({ x, y });
         } else {
+          // Hide 3D menu
+          if (menuPlaneRef.current) {
+            menuPlaneRef.current.visible = false;
+          }
           // Close color picker if menu closes
           setColorPickerOpen(false);
+        }
+      }
+      
+      // Update 3D menu position to follow controller
+      if (menuOpenRef.current && menuPlaneRef.current && leftCtrlRef.current && cameraRef.current) {
+        const ctrlPos = worldPos(leftCtrlRef.current);
+        const ctrlDir = worldDir(leftCtrlRef.current);
+        const menuDistance = 0.4;
+        
+        menuPlaneRef.current.position.copy(ctrlPos);
+        menuPlaneRef.current.position.add(ctrlDir.multiplyScalar(menuDistance));
+        menuPlaneRef.current.lookAt(cameraRef.current.position);
+        
+        // Update menu texture periodically
+        if (menuCanvasRef.current && menuTextureRef.current && Math.random() < 0.1) {
+          renderMenuToCanvas(menuCanvasRef.current, true);
+          menuTextureRef.current.needsUpdate = true;
         }
       }
 
@@ -608,6 +733,20 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
       if (rotateOverlayRef.current) {
         rotateOverlayRef.current.dispose();
         rotateOverlayRef.current = null;
+      }
+      
+      // Dispose menu plane
+      if (menuPlaneRef.current) {
+        scene.remove(menuPlaneRef.current);
+        if (menuPlaneRef.current.material instanceof THREE.Material) {
+          menuPlaneRef.current.material.dispose();
+        }
+        menuPlaneRef.current.geometry.dispose();
+        menuPlaneRef.current = null;
+      }
+      if (menuTextureRef.current) {
+        menuTextureRef.current.dispose();
+        menuTextureRef.current = null;
       }
 
       loadedModelsRef.current.forEach((lm) => {
