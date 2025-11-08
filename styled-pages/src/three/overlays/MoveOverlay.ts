@@ -16,7 +16,7 @@ export class MoveOverlay {
 
     const lineGeometry = new THREE.BufferGeometry();
     const lineMaterial = new THREE.LineBasicMaterial({
-      color: 0x82D1FF,
+      color: 0x00D4FF,
       linewidth: 2,
       transparent: true,
       opacity: 0.8,
@@ -26,7 +26,7 @@ export class MoveOverlay {
 
     const arrowGeometry = new THREE.ConeGeometry(0.08, 0.2, 8);
     const arrowMaterial = new THREE.MeshBasicMaterial({
-      color: 0x82D1FF,
+      color: 0x00D4FF,
       transparent: true,
       opacity: 0.8,
     });
@@ -39,15 +39,14 @@ export class MoveOverlay {
   private createLabel(): HTMLDivElement {
     const label = document.createElement('div');
     label.style.position = 'absolute';
-    label.style.fontFamily = 'JetBrains Mono, monospace';
+    label.style.fontFamily = 'Space Mono, monospace';
     label.style.fontSize = '14px';
-    label.style.color = '#82D1FF';
+    label.style.color = '#00D4FF';
     label.style.pointerEvents = 'none';
     label.style.display = 'none';
-    label.style.background = 'rgba(14, 18, 36, 0.9)';
+    label.style.background = '#000';
     label.style.padding = '4px 10px';
-    label.style.borderRadius = '6px';
-    label.style.border = '1px solid rgba(130, 209, 255, 0.4)';
+    label.style.border = '1px solid rgba(0, 212, 255, 0.4)';
     document.body.appendChild(label);
     return label;
   }

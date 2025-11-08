@@ -37,5 +37,9 @@ env/
 ENV/
 .venv/
 
+# Package lock files
+package-lock.json
+**/package-lock.json
+
 # Ignore this file to prevent merge conflicts
 .gitignore

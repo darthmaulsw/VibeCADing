@@ -27,9 +27,9 @@ export function VoiceBot() {
   return (
     <div className="absolute bottom-32 left-6">
       <svg width="120" height="120" className="absolute bottom-0 left-0">
-        <circle cx="60" cy="60" r="2" fill="#82D1FF" opacity="0.8" />
-        <line x1="60" y1="60" x2="60" y2="0" stroke="#82D1FF" strokeWidth="1" opacity="0.3" />
-        <line x1="60" y1="60" x2="0" y2="60" stroke="#82D1FF" strokeWidth="1" opacity="0.3" />
+        <circle cx="60" cy="60" r="2" fill="#00D4FF" opacity="0.8" />
+        <line x1="60" y1="60" x2="60" y2="0" stroke="#00D4FF" strokeWidth="1" opacity="0.3" />
+        <line x1="60" y1="60" x2="0" y2="60" stroke="#00D4FF" strokeWidth="1" opacity="0.3" />
       </svg>
 
       <div className="relative w-20 h-20 ml-5 mb-5">
@@ -48,7 +48,7 @@ export function VoiceBot() {
             cy="40"
             r="35"
             fill="none"
-            stroke="#82D1FF"
+            stroke="#00D4FF"
             strokeWidth="1"
             opacity="0.2"
             strokeDasharray="4 4"
@@ -58,7 +58,7 @@ export function VoiceBot() {
             cy="40"
             r="28"
             fill="none"
-            stroke="#82D1FF"
+            stroke="#00D4FF"
             strokeWidth="1"
             opacity="0.3"
           />
@@ -67,7 +67,7 @@ export function VoiceBot() {
             cy="40"
             r="20"
             fill="none"
-            stroke="#82D1FF"
+            stroke="#00D4FF"
             strokeWidth="1.5"
             opacity="0.5"
           />
@@ -79,7 +79,7 @@ export function VoiceBot() {
               y1="40"
               x2={40 + Math.cos((angle * Math.PI) / 180) * 35}
               y2={40 + Math.sin((angle * Math.PI) / 180) * 35}
-              stroke="#82D1FF"
+              stroke="#00D4FF"
               strokeWidth="0.5"
               opacity="0.2"
             />
@@ -100,11 +100,11 @@ export function VoiceBot() {
               cy="20"
               r="12"
               fill="none"
-              stroke="#82D1FF"
+              stroke="#00D4FF"
               strokeWidth="2"
               opacity="0.6"
             />
-            <circle cx="20" cy="20" r="6" fill="#82D1FF" opacity="0.8" />
+            <circle cx="20" cy="20" r="6" fill="#00D4FF" opacity="0.8" />
           </svg>
         </div>
 
@@ -127,7 +127,7 @@ export function VoiceBot() {
                 cx={x}
                 cy={y}
                 r="2"
-                fill="#82D1FF"
+                fill="#00D4FF"
                 opacity="0.6"
               />
             );
@@ -137,7 +137,7 @@ export function VoiceBot() {
 
       <div
         className="font-mono text-[9px] opacity-50 tracking-widest text-center mt-2"
-        style={{ color: '#82D1FF' }}
+        style={{ color: '#00D4FF' }}
       >
         {isListening ? 'VOICE INTERFACE' : 'STANDBY'}
       </div>
@@ -149,7 +149,7 @@ export function VoiceBot() {
             className="w-1 rounded-full"
             style={{
               height: isListening ? `${8 + Math.sin(Date.now() / 100 + i) * 4}px` : '4px',
-              background: '#82D1FF',
+              background: '#00D4FF',
               opacity: 0.6,
               transition: 'height 100ms',
             }}

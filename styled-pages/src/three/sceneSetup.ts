@@ -3,7 +3,7 @@ import { InteractionManager } from './interactions';
 
 export function setupScene(container: HTMLElement) {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x080A16);
+  scene.background = new THREE.Color(0x000000);
 
   const camera = new THREE.PerspectiveCamera(
     50,
@@ -26,14 +26,14 @@ export function setupScene(container: HTMLElement) {
   directionalLight.position.set(5, 10, 7);
   scene.add(directionalLight);
 
-  const gridHelper = new THREE.GridHelper(20, 40, 0xB4C4E8, 0xB4C4E8);
+  const gridHelper = new THREE.GridHelper(20, 40, 0x00D4FF, 0x00D4FF);
   (gridHelper.material as THREE.Material).transparent = true;
   (gridHelper.material as THREE.Material).opacity = 0.1;
   scene.add(gridHelper);
 
   const cubeGeometry = new THREE.BoxGeometry(1, 1, 1);
   const cubeMaterial = new THREE.MeshStandardMaterial({
-    color: 0x8AD7FF,
+    color: 0x00D4FF,
     roughness: 0.8,
     metalness: 0.0,
   });

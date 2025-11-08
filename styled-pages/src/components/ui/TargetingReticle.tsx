@@ -36,7 +36,7 @@ export function TargetingReticle({ x, y, visible }: TargetingReticleProps) {
           cy="50"
           r="30"
           fill="none"
-          stroke="#82D1FF"
+          stroke="#00D4FF"
           strokeWidth="1.5"
           opacity="0.6"
         />
@@ -45,15 +45,15 @@ export function TargetingReticle({ x, y, visible }: TargetingReticleProps) {
           cy="50"
           r="20"
           fill="none"
-          stroke="#82D1FF"
+          stroke="#00D4FF"
           strokeWidth="1"
           opacity="0.4"
           strokeDasharray="4 4"
         />
-        <line x1="50" y1="10" x2="50" y2="25" stroke="#82D1FF" strokeWidth="1.5" opacity="0.8" />
-        <line x1="50" y1="75" x2="50" y2="90" stroke="#82D1FF" strokeWidth="1.5" opacity="0.8" />
-        <line x1="10" y1="50" x2="25" y2="50" stroke="#82D1FF" strokeWidth="1.5" opacity="0.8" />
-        <line x1="75" y1="50" x2="90" y2="50" stroke="#82D1FF" strokeWidth="1.5" opacity="0.8" />
+        <line x1="50" y1="10" x2="50" y2="25" stroke="#00D4FF" strokeWidth="1.5" opacity="0.8" />
+        <line x1="50" y1="75" x2="50" y2="90" stroke="#00D4FF" strokeWidth="1.5" opacity="0.8" />
+        <line x1="10" y1="50" x2="25" y2="50" stroke="#00D4FF" strokeWidth="1.5" opacity="0.8" />
+        <line x1="75" y1="50" x2="90" y2="50" stroke="#00D4FF" strokeWidth="1.5" opacity="0.8" />
         <circle cx="50" cy="50" r="3" fill="#E0A9FF" opacity="0.8" />
       </svg>
     </div>
