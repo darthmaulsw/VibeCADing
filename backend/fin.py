@@ -28,17 +28,6 @@ def gen_cad(p):
 async def get_cad(user_prompt):
     client = Dedalus()
     runner = DedalusRunner(client)
-<<<<<<< HEAD
-    p = mkprompt(user_prompt)
-    print(p)
-    result = await runner.run(
-        input=f"Generate the instructions according to the following prompt {p}.",
-        model=["openai/gpt-5-mini"],
-        mcp_servers=["windsor/brave-search-mcp"],
-        stream=False,
-    )
-    return result.final_output
-=======
     # p = mkprompt(user_prompt)
     # print(p)
     result =  runner.run(
@@ -51,7 +40,6 @@ async def get_cad(user_prompt):
                 
                 the openScad code should be stored and not returned into the terminal. 
                 THE OPENSCAD CODE SHOULD BE WRITTEEN INTO A FILE VIA gen_cad
->>>>>>> 5cd983eb9687614c6903ed40e84fa16573f4eefe
 
                 YOU NEED TO WAIT UNTIL gen_cad HAS FINISHED WRITING THE FILE BEFORE YOU FINISH YOUR RESPONSE
 
