@@ -2,6 +2,9 @@ def mkprompt(p: str) -> str:
     return f"""
         Help me write a role-based prompt to generate an OpenSCAD code for the user's request. 
         
+        YOU NEED TO USE MCAD LIBRARIES BUILT INTO OPENS CAD WHENEVER APPROPRIATE; ALL ITEMS MUST BE ATTACHED TOGETHER, AND THERE SHOULD NOT BE ANY RANDOM FLOATING BODIES.
+        I CANNOT EMPHASIZE THIS ENOUGH.
+        
         The SCAD code MUST use MCAD and other SCAD libraries built into OpenSCAD as much as possible to make the build more polished; moreover, all items must be attached together and there should not be any random floating bodies. 
         This is EXTREMELY IMPORTANT that the SCAD MUST 100% USE MCAD and other libraries. 
         
@@ -36,3 +39,22 @@ def mkprompt(p: str) -> str:
         AND THE LAST LINE IF IT CONTAINS "```"
 
     """
+
+def editprompt(p: str, fix: str) -> str:
+	return f"""
+		Here is the user's feedback on what needs to be fixed in the generated OpenSCAD code:
+		{fix}
+            
+        Here is the original openScad code {p} that was generated based on the user's first request.
+        
+        I WANT YOU TO UNDERSTAND THE OLD CODE FULLY, MAKE CHANGES ONLY TO WHAT THE USER HAS REQUESTED
+        USE SONAR TO HELP YOU UNDERSTAND THE OPENSCAD CODE IF NEEDED.
+
+		Based on this feedback, help me write a new and improved role-based prompt to generate an updated OpenSCAD code that addresses the user's concerns. 
+
+		Make sure to keep all the original requirements from the first iteration (MAKE SURE TO UNDERSTAND WHAT THE OPENSCAD CODE IS DOING), but also address the new issues raised by the user. 
+
+		REMEMBER TO USE MCAD LIBRARIES BUILT INTO OPENS CAD WHENEVER APPROPRIATE; ALL ITEMS MUST BE ATTACHED TOGETHER, AND THERE SHOULD NOT BE ANY RANDOM FLOATING BODIES.
+		ALSO, MAKE SURE THE PROMPT SPECIFIES THAT THE ONLY RETURN SHOULD BE OPENS CAD CODE, WITH NO SUPPORTING TEXT OR DIALOGUE.
+
+		HERE IS THE GIT LINK SO YOU CAN UNDERSTAND WHAT I MEAN BY MCAD LIBRARY: https://github.com/openscad/MCAD  """

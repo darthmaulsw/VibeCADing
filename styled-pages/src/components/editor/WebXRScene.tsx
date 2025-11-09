@@ -384,8 +384,8 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
 
   /** xr-standard mapping on Quest: thumbstick click is typically index 3 */
   function isThumbstickClick(gp: Gamepad | null | undefined) {
-    // Try 3 first; include a couple fallbacks seen on some runtimes
-    return anyPressed(gp, [3, 11, 9]);
+    if (!gp || !gp.buttons) return false;
+    return !!(gp.buttons[3]?.pressed || gp.buttons[11]?.pressed || gp.buttons[9]?.pressed);
   }
 
   /** Stick axes with fallbacks (Quest: left [0,1], right [2,3]) */
@@ -402,21 +402,32 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
     }
   }
 
-  /** Read left stick specifically */
+  /** Read left stick specifically using legacy detection */
   function readLeftStick(gp: Gamepad | null | undefined): { x: number; y: number } {
-    return readStick(gp, 'left');
+    return getLeftStickLegacy(gp);
   }
 
-  /** Convert stick input to menu index (returns null if in deadzone) */
-  function stickToMenuIndex(lx: number, ly: number, itemCount: number, deadzone: number): number | null {
-    const mag = Math.hypot(lx, ly);
-    if (mag <= deadzone) return null;
-    
+  /** Prefer axes [2,3], fall back to [0,1] if primary pair is centered. */
+  function getLeftStickLegacy(gp: Gamepad | null | undefined): { x: number; y: number } {
+    if (!gp || !gp.axes) return { x: 0, y: 0 };
+    const primaryX = gp.axes[2] ?? 0;
+    const primaryY = gp.axes[3] ?? 0;
+    const primaryMag = Math.hypot(primaryX, primaryY);
+    if (primaryMag > 0.05) {
+      return { x: primaryX, y: primaryY };
+    }
+    const fallbackX = gp.axes[0] ?? 0;
+    const fallbackY = gp.axes[1] ?? 0;
+    return { x: fallbackX, y: fallbackY };
+  }
+
+  /** Convert stick input to menu index */
+  function stickToMenuIndex(lx: number, ly: number, itemCount: number, startAtTop = true): number {
     // Angle in radians: right = 0, up = -PI/2, CCW positive
     const angle = Math.atan2(-ly, lx);
     
-    // Menu starts at top (-PI/2)
-    const menuStartAngle = -Math.PI / 2;
+    // Menu starts at top (-PI/2) by default, optionally rotate
+    const menuStartAngle = startAtTop ? -Math.PI / 2 : 0;
     
     // Shift so 0 is top; wrap to [0, 2PI)
     let a = angle - menuStartAngle;
@@ -424,13 +435,8 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
     
     // Slice the circle into N equal wedges
     const segmentAngle = (2 * Math.PI) / itemCount;
-    let selectedIndex = Math.floor(a / segmentAngle);
-    
-    // Clamp to valid range
-    if (selectedIndex >= itemCount) selectedIndex = itemCount - 1;
-    if (selectedIndex < 0) selectedIndex = 0;
-    
-    return selectedIndex;
+    const selectedIndex = Math.floor(a / segmentAngle);
+    return Math.max(0, Math.min(itemCount - 1, selectedIndex));
   }
 
   /** Y button on left controller (buttons 4 or 5) */
@@ -787,49 +793,53 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
       }
 
       // Update radial menu
-      function updateRadialMenu() {
+      function updateRadialMenuFrame() {
         if (!menuOpenRef.current) return;
         const gp = leftGamepadRef.current;
         if (!gp || !menuCanvasRef.current || !menuTextureRef.current) return;
-        
-        const { x: lx, y: ly } = readLeftStick(gp);
-        
-        // 1) Compute selection
-        const idx = stickToMenuIndex(lx, ly, MENU_ITEMS.length, 0.15);
-        if (idx !== null && idx !== menuSelectedIndexRef.current) {
-          menuSelectedIndexRef.current = idx;
-          // re-render your wheel to highlight idx
-          renderMenuToCanvas(menuCanvasRef.current, true, idx);
-          menuTextureRef.current.needsUpdate = true;
-        } else if (idx === null && menuSelectedIndexRef.current != null) {
-          // keep showing current highlight (optional re-render)
-          renderMenuToCanvas(menuCanvasRef.current, true, menuSelectedIndexRef.current);
-          menuTextureRef.current.needsUpdate = true;
+
+        const { x: lx, y: ly } = getLeftStickLegacy(gp);
+        const mag = Math.hypot(lx, ly);
+        const baseDeadzone = mag > 0.6 ? 0.04 : 0.08;
+        const switchThreshold = baseDeadzone + 0.03;
+
+        // console.log('[AR][Menu] left stick', lx.toFixed(2), ly.toFixed(2), 'mag', mag.toFixed(2));
+
+        if (mag > baseDeadzone) {
+          const prevIndex = menuSelectedIndexRef.current ?? 0;
+          if (menuSelectedIndexRef.current == null || mag > switchThreshold) {
+            const idx = stickToMenuIndex(lx, ly, MENU_ITEMS.length, true);
+            if (idx !== prevIndex) {
+              menuSelectedIndexRef.current = idx;
+              renderMenuToCanvas(menuCanvasRef.current, true, idx);
+              menuTextureRef.current.needsUpdate = true;
+            }
+          }
         }
-        
+
         // 2) Confirm on stick click (edge)
         const clickNow = isThumbstickClick(gp);
         if (clickNow && !prevStickClickRef.current && menuSelectedIndexRef.current != null) {
           const choice = MENU_ITEMS[menuSelectedIndexRef.current];
-          
+
           // handle selection (open color picker, enable rotate, etc.)
           menuOpenRef.current = false;
           if (menuPlaneRef.current) menuPlaneRef.current.visible = false;
-          
+
           if (choice === 'Color') {
             // Show color picker plane
             if (colorPickerPlaneRef.current && leftCtrlRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current && cameraRef.current) {
               const ctrlPos = worldPos(leftCtrlRef.current);
               const ctrlDir = worldDir(leftCtrlRef.current);
               const pickerDistance = 0.4;
-              
+
               colorPickerPlaneRef.current.position.copy(ctrlPos);
               colorPickerPlaneRef.current.position.add(ctrlDir.multiplyScalar(pickerDistance));
               colorPickerPlaneRef.current.lookAt(cameraRef.current.position);
               colorPickerPlaneRef.current.visible = true;
-              
+
               colorPickerStateRef.current = { hue: 200, saturation: 80, lightness: 60, rotation: 0 };
-              
+
               renderColorPickerToCanvas(
                 colorPickerCanvasRef.current,
                 true,
@@ -865,7 +875,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
           menuPlaneRef.current.lookAt(cameraRef.current.position);
         }
         
-        updateRadialMenu();
+        updateRadialMenuFrame();
       } else {
         // Menu closed - keep edge detector in sync
         prevStickClickRef.current = isThumbstickClick(leftGamepadRef.current ?? undefined);
