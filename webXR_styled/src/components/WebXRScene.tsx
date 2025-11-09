@@ -401,21 +401,6 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     return anyPressed(gp, [3, 11, 9]); // 3 is standard; 11/9 are fallbacks seen on some runtimes
   }
 
-  // Legacy read: prefer [2,3], fallback to [0,1]
-  function getLeftStickLegacy(gp: Gamepad | null | undefined, deadzone = 0.06) {
-    let x = 0, y = 0;
-    if (gp?.axes && gp.axes.length > 3) { // prefer [2,3]
-      x = gp.axes[2] ?? 0;
-      y = gp.axes[3] ?? 0;
-    }
-    // fallback if [2,3] look centered
-    if (Math.abs(x) < deadzone && Math.abs(y) < deadzone && gp?.axes && gp.axes.length > 1) {
-      x = gp.axes[0] ?? 0;
-      y = gp.axes[1] ?? 0;
-    }
-    return { x, y };
-  }
-
   // Laser setup/teardown
   const ensureLaser = (scene: THREE.Scene) => {
     if (!laserLineRef.current) {
@@ -830,27 +815,31 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
       // Handle color picker interaction
       if (colorPickerOpen && leftGamepadRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current) {
         const gp = leftGamepadRef.current;
-        // Read left stick via legacy method (axes [2,3] then [0,1])
-        const stickDeadzone = 0.06; // smaller so it feels responsive
-        const { x: stickX, y: stickY } = getLeftStickLegacy(gp, stickDeadzone);
-        const mag = Math.hypot(stickX, stickY);
-        if (mag > stickDeadzone) {
-          // Angle: right = 0, up = -PI/2, CCW positive (same as your menu)
-          const angle = Math.atan2(-stickY, stickX);
-          const start = -Math.PI / 2; // wheel starts at top
-          let a = angle - start;
-          a = (a % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
-          const newHue = Math.round((a / (Math.PI * 2)) * 360);
-          // Damp jitter a bit but still feel immediate
-          if (Math.abs(colorPickerStateRef.current.hue - newHue) >= 2) {
+        
+        // Get joystick input for hue selection using readStick helper
+        const { x: stickX, y: stickY } = readStick(leftGamepadRef.current, 'left');
+        
+        const stickDeadzone = 0.1;
+        
+        // Update hue based on joystick angle
+        if (Math.abs(stickX) > stickDeadzone || Math.abs(stickY) > stickDeadzone) {
+          const angle = Math.atan2(stickX, -stickY);
+          const normalizedAngle = (angle + Math.PI * 2) % (Math.PI * 2);
+          const newHue = Math.floor((normalizedAngle / (Math.PI * 2)) * 360);
+          
+          if (Math.abs(colorPickerStateRef.current.hue - newHue) > 5) {
             colorPickerStateRef.current.hue = newHue;
+            
             // Update color immediately
             const color = `hsl(${colorPickerStateRef.current.hue}, ${colorPickerStateRef.current.saturation}%, ${colorPickerStateRef.current.lightness}%)`;
             handleColorSelect(color);
           }
         }
-        // Animate ring & redraw
+        
+        // Update rotation for animation
         colorPickerStateRef.current.rotation = (colorPickerStateRef.current.rotation + 0.4) % 360;
+        
+        // Continuously update color picker texture
         renderColorPickerToCanvas(
           colorPickerCanvasRef.current,
           true,
@@ -860,13 +849,21 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           colorPickerStateRef.current.rotation
         );
         colorPickerTextureRef.current.needsUpdate = true;
-        // Thumbstick click to close (unchanged, but keep edge detection local)
-        const clickNow = isThumbstickClick(gp);
-        if (clickNow && !prevMenuStickClickRef.current) {
+        
+        // Handle joystick click to close
+        const currentStickClick = isThumbstickClick(gp);
+        const wasStickClickPressed = prevMenuStickClickRef.current;
+        
+        if (currentStickClick && !wasStickClickPressed) {
+          // Close color picker
           setColorPickerOpen(false);
-          if (colorPickerPlaneRef.current) colorPickerPlaneRef.current.visible = false;
+          if (colorPickerPlaneRef.current) {
+            colorPickerPlaneRef.current.visible = false;
+          }
         }
-        prevMenuStickClickRef.current = clickNow;
+        
+        // Update previous stick click state for next frame
+        prevMenuStickClickRef.current = currentStickClick;
       }
       
       // Update 3D color picker position to follow controller
@@ -904,12 +901,6 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
       const right = rightCtrlRef.current;
 
       if (obj && left && right) {
-        // If color picker UI is active, don't allow drag/scale/rotate to run this frame
-        if (colorPickerOpen) {
-          renderer.render(scene, camera);
-          return;
-        }
-        
         /* ===== 1) DRAGGING (highest priority) ===== */
         if (rightB) {
           // entering drag
