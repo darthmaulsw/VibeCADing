@@ -884,7 +884,13 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           const newHue = Math.floor((normalizedAngle / (Math.PI * 2)) * 360);
           
           // Only update if changed significantly (hysteresis for hue)
-          if (Math.abs(currentHue - newHue) > 3 || Math.abs(currentHue - newHue + 360) > 3 || Math.abs(currentHue - newHue - 360) > 3) {
+          const hueDiff = Math.min(
+            Math.abs(currentHue - newHue),
+            Math.abs(currentHue - newHue + 360),
+            Math.abs(currentHue - newHue - 360)
+          );
+          
+          if (hueDiff > 3) {
             colorPickerStateRef.current.hue = newHue;
             
             // Update color immediately
