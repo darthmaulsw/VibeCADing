@@ -1222,7 +1222,8 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
 
   const updateColorPickerStateFromColor = (color: string) => {
     try {
-      const colorObj = new THREE.Color(color);
+      const colorObj = new THREE.Color();
+      colorObj.set(color);
       const hsl = { h: 0, s: 0, l: 0 };
       colorObj.getHSL(hsl);
       colorPickerStateRef.current = {
@@ -1232,10 +1233,11 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
         lightness: Math.round(hsl.l * 100),
       };
 
+      const isVisible = colorPickerPlaneRef.current?.visible ?? colorPickerOpen;
       if (colorPickerCanvasRef.current && colorPickerTextureRef.current) {
         renderColorPickerToCanvas(
           colorPickerCanvasRef.current,
-          true,
+          isVisible,
           colorPickerStateRef.current.hue,
           colorPickerStateRef.current.saturation,
           colorPickerStateRef.current.lightness,
