@@ -468,7 +468,8 @@ def edit_claude():
     else:
         raise("no file found")
     old = ret["scad_code"]
-    asyncio.run(wrapper(old, p))
+    oldp = ret["name"]
+    asyncio.run(wrapper(old, p, oldp))
     with open("edited.scad", "r", encoding="utf-8") as shamalama:
         cont = shamalama.read()
     shit = cont.removeprefix("```openscad").removesuffix("```")
