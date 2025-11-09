@@ -13,11 +13,10 @@ Your backend is running at: `https://arcane-fortress-69218-ec4429df10cc.herokuap
    - This is **normal** - the endpoint works correctly with POST requests from the frontend
 
 2. **CORS Configuration:**
-   - Your backend uses `CORS(app)` which allows all origins
-   - This should work with Vercel, but if you have issues, you can restrict it:
-   ```python
-   CORS(app, origins=["https://your-vercel-app.vercel.app"])
-   ```
+   - ✅ **FIXED:** Backend now allows all origins in production (Heroku)
+   - ✅ **FIXED:** Backend allows localhost:5173, localhost:5174, localhost:3000 for development
+   - The CORS configuration automatically detects Heroku (via `DYNO` env var) and allows all origins
+   - After deploying this update, CORS errors should be resolved
 
 3. **Environment Variables on Heroku:**
    Make sure these are set in Heroku dashboard:
@@ -61,7 +60,19 @@ After deployment, check:
 
 ## Local Development
 
-### For local development, create `.env.local` in `styled-pages/`:
+### Option 1: Use Heroku Backend (Recommended for Testing)
+
+Create `.env.local` in `styled-pages/` directory:
+
+```env
+VITE_BACKEND_URL=https://arcane-fortress-69218-ec4429df10cc.herokuapp.com
+VITE_SUPABASE_URL=your-supabase-url
+VITE_SUPABASE_ANON_KEY=your-supabase-key
+```
+
+### Option 2: Use Local Backend
+
+If you want to run backend locally on port 8000:
 
 ```env
 VITE_BACKEND_URL=http://localhost:8000
@@ -69,7 +80,12 @@ VITE_SUPABASE_URL=your-supabase-url
 VITE_SUPABASE_ANON_KEY=your-supabase-key
 ```
 
-This will use localhost when running `npm run dev` locally.
+**Important:** After creating `.env.local`, **restart your dev server** (`npm run dev`)
+
+**Check:** Open browser console - you should see:
+```
+🔧 [Config] Using backend URL: https://arcane-fortress-69218-ec4429df10cc.herokuapp.com
+```
 
 ---
 
@@ -99,11 +115,20 @@ curl -X POST https://arcane-fortress-69218-ec4429df10cc.herokuapp.com/api/hunyua
 - **Solution:** This is normal - endpoint only accepts POST
 
 ### Issue: CORS Error
-- **Cause:** Backend not allowing Vercel origin
-- **Solution:** Update CORS in `app.py`:
-  ```python
-  CORS(app, origins=["https://your-vercel-app.vercel.app", "http://localhost:5173"])
-  ```
+- **Cause:** Backend not allowing your origin
+- **Solution:** ✅ **FIXED** - Backend now allows all origins on Heroku. If you still see CORS errors:
+  1. Make sure you've deployed the updated `app.py` to Heroku
+  2. Check Heroku logs: `heroku logs --tail`
+  3. Verify the CORS headers are being sent
+
+### Issue: 503 Service Unavailable
+- **Cause:** Heroku app is sleeping (free tier) or crashed
+- **Solutions:**
+  1. **Wake up the app:** Visit `https://arcane-fortress-69218-ec4429df10cc.herokuapp.com/api/health` in your browser
+  2. **Check app status:** `heroku ps` (shows if dyno is running)
+  3. **Check logs:** `heroku logs --tail` (see if app crashed)
+  4. **Restart dyno:** `heroku restart`
+  5. **Upgrade to paid tier:** Free tier dynos sleep after 30 min of inactivity
 
 ### Issue: Environment Variable Not Working
 - **Cause:** Vercel needs redeploy after adding env var
