@@ -401,6 +401,21 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
     return anyPressed(gp, [3, 11, 9]); // 3 is standard; 11/9 are fallbacks seen on some runtimes
   }
 
+  // Legacy read: prefer [2,3], fallback to [0,1]
+  function getLeftStickLegacy(gp: Gamepad | null | undefined, deadzone = 0.06) {
+    let x = 0, y = 0;
+    if (gp?.axes && gp.axes.length > 3) { // prefer [2,3]
+      x = gp.axes[2] ?? 0;
+      y = gp.axes[3] ?? 0;
+    }
+    // fallback if [2,3] look centered
+    if (Math.abs(x) < deadzone && Math.abs(y) < deadzone && gp?.axes && gp.axes.length > 1) {
+      x = gp.axes[0] ?? 0;
+      y = gp.axes[1] ?? 0;
+    }
+    return { x, y };
+  }
+
   // Laser setup/teardown
   const ensureLaser = (scene: THREE.Scene) => {
     if (!laserLineRef.current) {
@@ -720,8 +735,8 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         }
       }
       
-      // Handle menu navigation with left joystick (only if color picker is not open)
-      if (menuOpenRef.current && !colorPickerOpen && leftGamepadRef.current && menuCanvasRef.current && menuTextureRef.current) {
+      // Handle menu navigation with left joystick
+      if (menuOpenRef.current && leftGamepadRef.current && menuCanvasRef.current && menuTextureRef.current) {
         const gp = leftGamepadRef.current;
 
         // Keep the same order you want on the wheel. Index 0 will be the TOP wedge.
@@ -812,56 +827,30 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         prevMenuStickClickRef.current = isThumbstickClick(leftGamepadRef.current ?? undefined);
       }
       
-      // Handle color picker interaction (color picker owns input when open)
+      // Handle color picker interaction
       if (colorPickerOpen && leftGamepadRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current) {
         const gp = leftGamepadRef.current;
-        
-        // Read left stick exactly like earlier version: axes [2,3] with fallback to [0,1]
-        let lx = 0;
-        let ly = 0;
-        if (gp.axes && gp.axes.length > 3) {
-          lx = gp.axes[2] ?? 0;
-          ly = gp.axes[3] ?? 0;
-        }
-        // Fallback to axes 0 and 1
-        if (Math.abs(lx) < 0.1 && Math.abs(ly) < 0.1 && gp.axes && gp.axes.length > 1) {
-          lx = gp.axes[0] ?? 0;
-          ly = gp.axes[1] ?? 0;
-        }
-        
-        // Smaller radial deadzone (0.06) so tiny drift still moves the selector
-        const radialDeadzone = 0.06;
-        const mag = Math.hypot(lx, ly);
-        
-        if (mag > radialDeadzone) {
-          // Angle in radians: right = 0, up = -PI/2, CCW positive
-          const angle = Math.atan2(-ly, lx);
-          
-          // Convert angle to hue (0-360 degrees)
-          // Color wheel starts at top (-PI/2), same as menu
-          const colorStartAngle = -Math.PI / 2;
-          
-          // Shift so 0 is top; wrap to [0, 2PI)
-          let a = angle - colorStartAngle;
+        // Read left stick via legacy method (axes [2,3] then [0,1])
+        const stickDeadzone = 0.06; // smaller so it feels responsive
+        const { x: stickX, y: stickY } = getLeftStickLegacy(gp, stickDeadzone);
+        const mag = Math.hypot(stickX, stickY);
+        if (mag > stickDeadzone) {
+          // Angle: right = 0, up = -PI/2, CCW positive (same as your menu)
+          const angle = Math.atan2(-stickY, stickX);
+          const start = -Math.PI / 2; // wheel starts at top
+          let a = angle - start;
           a = (a % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
-          
-          // Convert to hue (0-360)
-          const newHue = Math.floor((a / (Math.PI * 2)) * 360);
-          
-          // Update hue if changed significantly (reduce jitter)
-          if (Math.abs(colorPickerStateRef.current.hue - newHue) > 3) {
+          const newHue = Math.round((a / (Math.PI * 2)) * 360);
+          // Damp jitter a bit but still feel immediate
+          if (Math.abs(colorPickerStateRef.current.hue - newHue) >= 2) {
             colorPickerStateRef.current.hue = newHue;
-            
             // Update color immediately
             const color = `hsl(${colorPickerStateRef.current.hue}, ${colorPickerStateRef.current.saturation}%, ${colorPickerStateRef.current.lightness}%)`;
             handleColorSelect(color);
           }
         }
-        
-        // Update rotation for animation
+        // Animate ring & redraw
         colorPickerStateRef.current.rotation = (colorPickerStateRef.current.rotation + 0.4) % 360;
-        
-        // Continuously update color picker texture
         renderColorPickerToCanvas(
           colorPickerCanvasRef.current,
           true,
@@ -871,21 +860,13 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           colorPickerStateRef.current.rotation
         );
         colorPickerTextureRef.current.needsUpdate = true;
-        
-        // Handle joystick click to close
-        const currentStickClick = isThumbstickClick(gp);
-        const wasStickClickPressed = prevMenuStickClickRef.current;
-        
-        if (currentStickClick && !wasStickClickPressed) {
-          // Close color picker
+        // Thumbstick click to close (unchanged, but keep edge detection local)
+        const clickNow = isThumbstickClick(gp);
+        if (clickNow && !prevMenuStickClickRef.current) {
           setColorPickerOpen(false);
-          if (colorPickerPlaneRef.current) {
-            colorPickerPlaneRef.current.visible = false;
-          }
+          if (colorPickerPlaneRef.current) colorPickerPlaneRef.current.visible = false;
         }
-        
-        // Update previous stick click state for next frame
-        prevMenuStickClickRef.current = currentStickClick;
+        prevMenuStickClickRef.current = clickNow;
       }
       
       // Update 3D color picker position to follow controller
@@ -923,6 +904,12 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
       const right = rightCtrlRef.current;
 
       if (obj && left && right) {
+        // If color picker UI is active, don't allow drag/scale/rotate to run this frame
+        if (colorPickerOpen) {
+          renderer.render(scene, camera);
+          return;
+        }
+        
         /* ===== 1) DRAGGING (highest priority) ===== */
         if (rightB) {
           // entering drag
