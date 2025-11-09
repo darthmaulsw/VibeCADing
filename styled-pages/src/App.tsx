@@ -247,7 +247,13 @@ function App() {
   };
 
   return (
-    <div className="relative w-full h-screen" style={{ background: 'var(--bg-deep)', overflow: 'hidden' }}>
+    <div
+      className="relative w-full h-screen"
+      style={{
+        background: screen === 'landing' ? 'transparent' : 'var(--bg-deep)',
+        overflow: 'hidden',
+      }}
+    >
       {screen === 'landing' && <LandingScreen onSelectMode={handleLandingSelect} />}
 
       {screen === 'photo-capture' && (
