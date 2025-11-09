@@ -34,12 +34,6 @@ const ROT_MAX_STEP = Math.PI / 12;        // requested
 const DRAG_MIN_DISTANCE = 0.05; // 5 cm: keep target in front of controller
 const DRAG_LERP = 0.35;         // smoothing to make motion pleasant
 
-// Color picker canvas metrics (keep in sync with renderColorPickerToCanvas)
-const COLOR_CANVAS_SIZE = 600;
-const COLOR_RING_INNER = 62;
-const COLOR_RING_OUTER = 90;
-const COLOR_CENTER_RADIUS = 32;
-
 /* =========================
    Unit helpers (meters-first)
    ========================= */
@@ -137,6 +131,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
   // --- UI State ---
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const [colorPickerPos, setColorPickerPos] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  const colorPickerOpenRef = useRef(false);
   const menuOpenRef = useRef(false);
   const menuPosRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   
@@ -148,14 +143,24 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
   const prevStickClickRef = useRef<boolean>(false);
   const prevYPressedRef = useRef<boolean>(false);
   
-// --- 3D Color Picker in AR ---
-const colorPickerPlaneRef = useRef<THREE.Mesh | null>(null);
-const colorPickerCanvasRef = useRef<HTMLCanvasElement | null>(null);
-const colorPickerTextureRef = useRef<THREE.CanvasTexture | null>(null);
-const colorPickerStateRef = useRef({ hue: 200, saturation: 80, lightness: 60, rotation: 0 });
-const colorPickerRaycasterRef = useRef<THREE.Raycaster | null>(null);
-const colorPickerHoverHueRef = useRef<number | null>(null);
-const colorPickerPrevGrabRef = useRef(false);
+  // --- 3D Color Picker in AR ---
+  const colorPickerPlaneRef = useRef<THREE.Mesh | null>(null);
+  const colorPickerCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const colorPickerTextureRef = useRef<THREE.CanvasTexture | null>(null);
+  const colorPickerStateRef = useRef({ hue: 200, saturation: 80, lightness: 60, rotation: 0 });
+
+  const openColorPicker = () => {
+    colorPickerOpenRef.current = true;
+    setColorPickerOpen(true);
+  };
+
+  const closeColorPicker = () => {
+    colorPickerOpenRef.current = false;
+    setColorPickerOpen(false);
+    if (colorPickerPlaneRef.current) {
+      colorPickerPlaneRef.current.visible = false;
+    }
+  };
 
   // Helpers
   const setUniformScale = (obj: THREE.Object3D, s: number) => {
@@ -393,8 +398,8 @@ const colorPickerPrevGrabRef = useRef(false);
 
   /** xr-standard mapping on Quest: thumbstick click is typically index 3 */
   function isThumbstickClick(gp: Gamepad | null | undefined) {
-    // Try 3 first; include a couple fallbacks seen on some runtimes
-    return anyPressed(gp, [3, 11, 9]);
+    if (!gp || !gp.buttons) return false;
+    return !!(gp.buttons[3]?.pressed || gp.buttons[11]?.pressed || gp.buttons[9]?.pressed);
   }
 
   /** Stick axes with fallbacks (Quest: left [0,1], right [2,3]) */
@@ -411,21 +416,32 @@ const colorPickerPrevGrabRef = useRef(false);
     }
   }
 
-  /** Read left stick specifically */
+  /** Read left stick specifically using legacy detection */
   function readLeftStick(gp: Gamepad | null | undefined): { x: number; y: number } {
-    return readStick(gp, 'left');
+    return getLeftStickLegacy(gp);
   }
 
-  /** Convert stick input to menu index (returns null if in deadzone) */
-  function stickToMenuIndex(lx: number, ly: number, itemCount: number, deadzone: number): number | null {
-    const mag = Math.hypot(lx, ly);
-    if (mag <= deadzone) return null;
-    
+  /** Prefer axes [2,3], fall back to [0,1] if primary pair is centered. */
+  function getLeftStickLegacy(gp: Gamepad | null | undefined): { x: number; y: number } {
+    if (!gp || !gp.axes) return { x: 0, y: 0 };
+    const primaryX = gp.axes[2] ?? 0;
+    const primaryY = gp.axes[3] ?? 0;
+    const primaryMag = Math.hypot(primaryX, primaryY);
+    if (primaryMag > 0.05) {
+      return { x: primaryX, y: primaryY };
+    }
+    const fallbackX = gp.axes[0] ?? 0;
+    const fallbackY = gp.axes[1] ?? 0;
+    return { x: fallbackX, y: fallbackY };
+  }
+
+  /** Convert stick input to menu index */
+  function stickToMenuIndex(lx: number, ly: number, itemCount: number, startAtTop = true): number {
     // Angle in radians: right = 0, up = -PI/2, CCW positive
     const angle = Math.atan2(-ly, lx);
     
-    // Menu starts at top (-PI/2)
-    const menuStartAngle = -Math.PI / 2;
+    // Menu starts at top (-PI/2) by default, optionally rotate
+    const menuStartAngle = startAtTop ? -Math.PI / 2 : 0;
     
     // Shift so 0 is top; wrap to [0, 2PI)
     let a = angle - menuStartAngle;
@@ -433,13 +449,8 @@ const colorPickerPrevGrabRef = useRef(false);
     
     // Slice the circle into N equal wedges
     const segmentAngle = (2 * Math.PI) / itemCount;
-    let selectedIndex = Math.floor(a / segmentAngle);
-    
-    // Clamp to valid range
-    if (selectedIndex >= itemCount) selectedIndex = itemCount - 1;
-    if (selectedIndex < 0) selectedIndex = 0;
-    
-    return selectedIndex;
+    const selectedIndex = Math.floor(a / segmentAngle);
+    return Math.max(0, Math.min(itemCount - 1, selectedIndex));
   }
 
   /** Y button on left controller (buttons 4 or 5) */
@@ -527,8 +538,6 @@ const colorPickerPrevGrabRef = useRef(false);
     /* ---------- Rotate overlay ---------- */
     const rotateOverlay = new RotateOverlay(scene);
     rotateOverlayRef.current = rotateOverlay;
-
-    colorPickerRaycasterRef.current = new THREE.Raycaster();
 
     /* ---------- 3D Menu Plane for AR ---------- */
     const menuCanvas = document.createElement('canvas');
@@ -791,56 +800,69 @@ const colorPickerPrevGrabRef = useRef(false);
             }
           } else {
             // Close color picker if menu closes
-            setColorPickerOpen(false);
+            closeColorPicker();
           }
         }
         prevYPressedRef.current = yNow;
       }
 
       // Update radial menu
-      function updateRadialMenu() {
+      function updateRadialMenuFrame() {
         if (!menuOpenRef.current) return;
         const gp = leftGamepadRef.current;
         if (!gp || !menuCanvasRef.current || !menuTextureRef.current) return;
-        
-        const { x: lx, y: ly } = readLeftStick(gp);
-        
-        // 1) Compute selection
-        const idx = stickToMenuIndex(lx, ly, MENU_ITEMS.length, 0.15);
-        if (idx !== null && idx !== menuSelectedIndexRef.current) {
-          menuSelectedIndexRef.current = idx;
-          // re-render your wheel to highlight idx
-          renderMenuToCanvas(menuCanvasRef.current, true, idx);
-          menuTextureRef.current.needsUpdate = true;
-        } else if (idx === null && menuSelectedIndexRef.current != null) {
-          // keep showing current highlight (optional re-render)
-          renderMenuToCanvas(menuCanvasRef.current, true, menuSelectedIndexRef.current);
+
+        const { x: lx, y: ly } = getLeftStickLegacy(gp);
+        const mag = Math.hypot(lx, ly);
+
+        // console.log('[AR][Menu] left stick', lx.toFixed(2), ly.toFixed(2), 'mag', mag.toFixed(2));
+
+        // Adaptive deadzone & hysteresis
+        let dz = 0.08;
+        if (mag > 0.6) dz = 0.04;
+
+        const currentIndex = menuSelectedIndexRef.current;
+        const armed = mag > dz;
+        const hysteresis = dz + 0.03;
+
+        if (armed || (currentIndex == null && mag > dz)) {
+          if (mag > hysteresis) {
+            const idx = stickToMenuIndex(lx, ly, MENU_ITEMS.length, true);
+            if (idx !== currentIndex) {
+              menuSelectedIndexRef.current = idx;
+              renderMenuToCanvas(menuCanvasRef.current, true, idx);
+              menuTextureRef.current.needsUpdate = true;
+            }
+          }
+        } else if (currentIndex != null) {
+          // keep current highlight fresh
+          renderMenuToCanvas(menuCanvasRef.current, true, currentIndex);
           menuTextureRef.current.needsUpdate = true;
         }
-        
+
         // 2) Confirm on stick click (edge)
         const clickNow = isThumbstickClick(gp);
         if (clickNow && !prevStickClickRef.current && menuSelectedIndexRef.current != null) {
           const choice = MENU_ITEMS[menuSelectedIndexRef.current];
-          
+
           // handle selection (open color picker, enable rotate, etc.)
           menuOpenRef.current = false;
           if (menuPlaneRef.current) menuPlaneRef.current.visible = false;
-          
+
           if (choice === 'Color') {
             // Show color picker plane
             if (colorPickerPlaneRef.current && leftCtrlRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current && cameraRef.current) {
               const ctrlPos = worldPos(leftCtrlRef.current);
               const ctrlDir = worldDir(leftCtrlRef.current);
               const pickerDistance = 0.4;
-              
+
               colorPickerPlaneRef.current.position.copy(ctrlPos);
               colorPickerPlaneRef.current.position.add(ctrlDir.multiplyScalar(pickerDistance));
               colorPickerPlaneRef.current.lookAt(cameraRef.current.position);
               colorPickerPlaneRef.current.visible = true;
-              
+
               colorPickerStateRef.current = { hue: 200, saturation: 80, lightness: 60, rotation: 0 };
-              
+
               renderColorPickerToCanvas(
                 colorPickerCanvasRef.current,
                 true,
@@ -851,13 +873,13 @@ const colorPickerPrevGrabRef = useRef(false);
               );
               colorPickerTextureRef.current.needsUpdate = true;
             }
-            setColorPickerOpen(true);
+            openColorPicker();
             setColorPickerPos(menuPosRef.current);
           } else if (choice === 'Rotate') {
             // Optional: prime rotate overlay or state if you want
-            setColorPickerOpen(false);
+            closeColorPicker();
           } else if (choice === 'Scale') {
-            setColorPickerOpen(false);
+            closeColorPicker();
           }
         }
         prevStickClickRef.current = clickNow;
@@ -876,40 +898,47 @@ const colorPickerPrevGrabRef = useRef(false);
           menuPlaneRef.current.lookAt(cameraRef.current.position);
         }
         
-        updateRadialMenu();
+        updateRadialMenuFrame();
       } else {
         // Menu closed - keep edge detector in sync
         prevStickClickRef.current = isThumbstickClick(leftGamepadRef.current ?? undefined);
       }
       
       // Handle color picker interaction
-      if (colorPickerOpen && leftGamepadRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current) {
+      if (colorPickerOpenRef.current && leftGamepadRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current) {
         const gp = leftGamepadRef.current;
         
-        // Get joystick input for hue selection using readStick helper
-        const { x: stickX, y: stickY } = readStick(leftGamepadRef.current, 'left');
-        
-        const stickDeadzone = 0.1;
-        
-        // Update hue based on joystick angle
-        if (Math.abs(stickX) > stickDeadzone || Math.abs(stickY) > stickDeadzone) {
-          const angle = Math.atan2(stickX, -stickY);
-          const normalizedAngle = (angle + Math.PI * 2) % (Math.PI * 2);
+        const { x: lx, y: ly } = getLeftStickLegacy(gp);
+        const mag = Math.hypot(lx, ly);
+
+        let dz = 0.08;
+        if (mag > 0.6) dz = 0.04;
+        const hysteresis = dz + 0.03;
+
+        if (mag > hysteresis) {
+          const angle = Math.atan2(-ly, lx);
+          const offset = -Math.PI / 2;
+          let normalizedAngle = angle - offset;
+          normalizedAngle = (normalizedAngle % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
           const newHue = Math.floor((normalizedAngle / (Math.PI * 2)) * 360);
-          
-          if (Math.abs(colorPickerStateRef.current.hue - newHue) > 5) {
+
+          const currentHue = colorPickerStateRef.current.hue;
+          const hueDiff = Math.min(
+            Math.abs(currentHue - newHue),
+            Math.abs(currentHue - newHue + 360),
+            Math.abs(currentHue - newHue - 360)
+          );
+
+          if (hueDiff > 3) {
             colorPickerStateRef.current.hue = newHue;
-            
-            // Update color immediately
+
             const color = `hsl(${colorPickerStateRef.current.hue}, ${colorPickerStateRef.current.saturation}%, ${colorPickerStateRef.current.lightness}%)`;
             handleColorSelect(color);
           }
         }
-        
-        // Update rotation for animation
+
         colorPickerStateRef.current.rotation = (colorPickerStateRef.current.rotation + 0.4) % 360;
-        
-        // Continuously update color picker texture
+
         renderColorPickerToCanvas(
           colorPickerCanvasRef.current,
           true,
@@ -920,93 +949,15 @@ const colorPickerPrevGrabRef = useRef(false);
         );
         colorPickerTextureRef.current.needsUpdate = true;
 
-        // Pointer-based interaction (raycast from left controller)
-        if (
-          colorPickerPlaneRef.current &&
-          colorPickerRaycasterRef.current &&
-          leftCtrlRef.current
-        ) {
-          const raycaster = colorPickerRaycasterRef.current;
-          const origin = worldPos(leftCtrlRef.current);
-          const dir = worldDir(leftCtrlRef.current);
-          raycaster.set(origin, dir);
-          const intersects = raycaster.intersectObject(colorPickerPlaneRef.current, false);
-
-          if (intersects.length > 0) {
-            const hit = intersects[0];
-            const plane = colorPickerPlaneRef.current;
-            const local = plane.worldToLocal(hit.point.clone());
-            const halfSize = 0.3; // PlaneGeometry(0.6, 0.6) → half-size
-            const xNorm = (local.x / halfSize + 0.5);
-            const yNorm = (-local.y / halfSize + 0.5);
-            const canvas = colorPickerCanvasRef.current;
-            const canvasWidth = canvas?.width ?? COLOR_CANVAS_SIZE;
-            const canvasHeight = canvas?.height ?? COLOR_CANVAS_SIZE;
-            const pixelX = xNorm * canvasWidth;
-            const pixelY = yNorm * canvasHeight;
-            const dx = pixelX - canvasWidth / 2;
-            const dy = pixelY - canvasHeight / 2;
-            const dist = Math.hypot(dx, dy);
-
-            const ringInnerPx = COLOR_RING_INNER * (canvasWidth / COLOR_CANVAS_SIZE);
-            const ringOuterPx = COLOR_RING_OUTER * (canvasWidth / COLOR_CANVAS_SIZE);
-            const centerRadiusPx = COLOR_CENTER_RADIUS * (canvasWidth / COLOR_CANVAS_SIZE);
-
-            let hoveredHue: number | null = null;
-            if (dist >= ringInnerPx && dist <= ringOuterPx) {
-              const angle = Math.atan2(dx, -dy);
-              const normalizedAngle = (angle + Math.PI * 2) % (Math.PI * 2);
-              hoveredHue = Math.floor((normalizedAngle / (Math.PI * 2)) * 360);
-            }
-
-            colorPickerHoverHueRef.current = hoveredHue;
-
-            const grabNow = leftGrab;
-            const grabEdge = grabNow && !colorPickerPrevGrabRef.current;
-
-            if (hoveredHue !== null && (grabEdge || grabNow)) {
-              if (Math.abs(colorPickerStateRef.current.hue - hoveredHue) > 1) {
-                colorPickerStateRef.current.hue = hoveredHue;
-                const color = `hsl(${hoveredHue}, ${colorPickerStateRef.current.saturation}%, ${colorPickerStateRef.current.lightness}%)`;
-                handleColorSelect(color);
-              }
-            }
-
-            if (grabEdge && dist <= centerRadiusPx) {
-              setColorPickerOpen(false);
-              if (colorPickerPlaneRef.current) {
-                colorPickerPlaneRef.current.visible = false;
-              }
-              colorPickerHoverHueRef.current = null;
-              colorPickerPrevGrabRef.current = false;
-            } else {
-              colorPickerPrevGrabRef.current = grabNow;
-            }
-          } else {
-            colorPickerHoverHueRef.current = null;
-            colorPickerPrevGrabRef.current = leftGrab;
-          }
-        } else {
-          colorPickerHoverHueRef.current = null;
-          colorPickerPrevGrabRef.current = leftGrab;
-        }
-        
-        // Handle joystick click to close
         const clickNow = isThumbstickClick(gp);
         if (clickNow && !prevStickClickRef.current) {
-          // Close color picker
-          setColorPickerOpen(false);
-          if (colorPickerPlaneRef.current) {
-            colorPickerPlaneRef.current.visible = false;
-          }
-          colorPickerPrevGrabRef.current = false;
-          colorPickerHoverHueRef.current = null;
+          closeColorPicker();
         }
         prevStickClickRef.current = clickNow;
       }
       
       // Update 3D color picker position to follow controller
-      if (colorPickerOpen && colorPickerPlaneRef.current && leftCtrlRef.current && cameraRef.current) {
+      if (colorPickerOpenRef.current && colorPickerPlaneRef.current && leftCtrlRef.current && cameraRef.current) {
         const ctrlPos = worldPos(leftCtrlRef.current);
         const ctrlDir = worldDir(leftCtrlRef.current);
         const pickerDistance = 0.4;
@@ -1261,10 +1212,6 @@ const colorPickerPrevGrabRef = useRef(false);
         menuTextureRef.current = null;
       }
       
-      colorPickerRaycasterRef.current = null;
-      colorPickerHoverHueRef.current = null;
-      colorPickerPrevGrabRef.current = false;
-
       // Dispose color picker plane
       if (colorPickerPlaneRef.current) {
         scene.remove(colorPickerPlaneRef.current);
@@ -1308,77 +1255,34 @@ const colorPickerPrevGrabRef = useRef(false);
   }, [xrSession]);
 
 
-  const updateColorPickerStateFromColor = (color: string) => {
-    try {
-      const colorObj = new THREE.Color();
-      colorObj.set(color);
-      const hsl = { h: 0, s: 0, l: 0 };
-      colorObj.getHSL(hsl);
-      colorPickerStateRef.current = {
-        ...colorPickerStateRef.current,
-        hue: Math.round(hsl.h * 360),
-        saturation: Math.round(hsl.s * 100),
-        lightness: Math.round(hsl.l * 100),
-      };
-
-      const isVisible = colorPickerPlaneRef.current?.visible ?? colorPickerOpen;
-      if (colorPickerCanvasRef.current && colorPickerTextureRef.current) {
-        renderColorPickerToCanvas(
-          colorPickerCanvasRef.current,
-          isVisible,
-          colorPickerStateRef.current.hue,
-          colorPickerStateRef.current.saturation,
-          colorPickerStateRef.current.lightness,
-          colorPickerStateRef.current.rotation
-        );
-        colorPickerTextureRef.current.needsUpdate = true;
-      }
-    } catch (error) {
-      console.warn('🥽 [AR] Failed to parse color for picker sync:', color, error);
-    }
-  };
-
-  const setMaterialColor = (material: THREE.Material, color: string) => {
-    const mat = material as THREE.Material & { color?: THREE.Color; needsUpdate?: boolean };
-    if (mat?.color instanceof THREE.Color) {
-      mat.color.set(color);
-      if (typeof mat.needsUpdate === 'boolean') {
-        mat.needsUpdate = true;
-      }
-    }
-  };
-
   // Handle color selection
   const handleColorSelect = (color: string) => {
-    const root = objectRef.current;
-    if (root) {
-      root.traverse((child) => {
+    if (objectRef.current) {
+      // Apply color to all meshes in the object
+      objectRef.current.traverse((child) => {
         if (child instanceof THREE.Mesh) {
           const mesh = child as THREE.Mesh;
-          const material = mesh.material;
-          if (Array.isArray(material)) {
-            material.forEach((mat) => setMaterialColor(mat, color));
-          } else if (material) {
-            setMaterialColor(material, color);
+          if (mesh.material) {
+            if (Array.isArray(mesh.material)) {
+              mesh.material.forEach((mat) => {
+                if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshBasicMaterial) {
+                  mat.color.set(color);
+                }
+              });
+            } else {
+              const mat = mesh.material as THREE.MeshStandardMaterial | THREE.MeshBasicMaterial;
+              if (mat.color) {
+                mat.color.set(color);
+              }
+            }
           }
         }
       });
     }
-
-    updateColorPickerStateFromColor(color);
   };
 
   return (
-    <>
-      <div ref={mountRef} style={{ width: '100%', height: '100vh', margin: 0, padding: 0 }} />
-      <ColorPicker
-        isOpen={colorPickerOpen}
-        x={colorPickerPos.x}
-        y={colorPickerPos.y}
-        onSelect={handleColorSelect}
-        onClose={() => setColorPickerOpen(false)}
-      />
-    </>
+    <div ref={mountRef} style={{ width: '100%', height: '100vh', margin: 0, padding: 0 }} />
   );
 };
 
