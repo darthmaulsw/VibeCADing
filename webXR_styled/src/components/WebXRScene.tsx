@@ -5,7 +5,6 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { loadModel, type LoadedModel } from './utils/modelLoader';
 import { ScaleOverlay } from '../three/overlays/ScaleOverlay';
 import { RotateOverlay } from '../three/overlays/RotateOverlay';
-import { ColorPicker } from './ui/ColorPicker';
 
 interface WebXRSceneProps {
   xrSession?: XRSession | null;
@@ -131,7 +130,6 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
 
   // --- UI State ---
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
-  const [colorPickerPos, setColorPickerPos] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   const menuOpenRef = useRef(false);
   const menuPosRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   
@@ -826,7 +824,6 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
               colorPickerTextureRef.current.needsUpdate = true;
             }
             setColorPickerOpen(true);
-            setColorPickerPos(menuPosRef.current);
           } else if (choice === 'Rotate') {
             // Optional: prime rotate overlay or state if you want
             setColorPickerOpen(false);
@@ -856,11 +853,11 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         prevStickClickRef.current = isThumbstickClick(leftGamepadRef.current ?? undefined);
       }
       
-      // Handle color picker interaction with adaptive deadzone and hysteresis
+      // Handle color picker interaction
       if (colorPickerOpen && leftGamepadRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current) {
         const gp = leftGamepadRef.current;
         
-        // Get joystick input using legacy method (same as menu)
+        // Get joystick input for hue selection using legacy method (same as menu)
         const { x: lx, y: ly } = getLeftStickLegacy(gp);
         const mag = Math.hypot(lx, ly);
         
@@ -868,26 +865,24 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         let dz = 0.08;
         if (mag > 0.6) dz = 0.04;
         
-        const currentHue = colorPickerStateRef.current.hue;
-        const armed = mag > dz;
-        const hysteresis = dz + 0.03;
-        
-        // Update hue based on joystick angle (only when clearly outside hysteresis)
-        if (armed && mag > hysteresis) {
-          // Angle in radians: right = 0, up = -PI/2, CCW positive
+        // Update hue based on joystick angle (only when clearly outside deadzone)
+        if (mag > dz) {
+          // Angle in radians: right = 0, up = -PI/2, CCW positive (same as color picker layout)
           const angle = Math.atan2(-ly, lx);
-          // Normalize to [0, 2PI)
-          let normalizedAngle = angle;
-          if (normalizedAngle < 0) normalizedAngle += Math.PI * 2;
           
-          // Convert to hue (0-360)
+          // Color picker starts at -90° (top) for hue 0
+          // We need to shift the angle to match: angle - (-PI/2) = angle + PI/2
+          const offset = -Math.PI / 2; // -90 degrees
+          let normalizedAngle = angle - offset;
+          normalizedAngle = (normalizedAngle % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+          
           const newHue = Math.floor((normalizedAngle / (Math.PI * 2)) * 360);
           
           // Only update if changed significantly (hysteresis for hue)
           const hueDiff = Math.min(
-            Math.abs(currentHue - newHue),
-            Math.abs(currentHue - newHue + 360),
-            Math.abs(currentHue - newHue - 360)
+            Math.abs(colorPickerStateRef.current.hue - newHue),
+            Math.abs(colorPickerStateRef.current.hue - newHue + 360),
+            Math.abs(colorPickerStateRef.current.hue - newHue - 360)
           );
           
           if (hueDiff > 3) {
@@ -1250,16 +1245,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   };
 
   return (
-    <>
-      <div ref={mountRef} style={{ width: '100%', height: '100vh', margin: 0, padding: 0 }} />
-      <ColorPicker
-        isOpen={colorPickerOpen}
-        x={colorPickerPos.x}
-        y={colorPickerPos.y}
-        onSelect={handleColorSelect}
-        onClose={() => setColorPickerOpen(false)}
-      />
-    </>
+    <div ref={mountRef} style={{ width: '100%', height: '100vh', margin: 0, padding: 0 }} />
   );
 };
 
