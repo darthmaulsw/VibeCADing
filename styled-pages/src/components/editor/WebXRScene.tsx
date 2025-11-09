@@ -1282,16 +1282,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
   };
 
   return (
-    <>
-      <div ref={mountRef} style={{ width: '100%', height: '100vh', margin: 0, padding: 0 }} />
-      <ColorPicker
-        isOpen={colorPickerOpen}
-        x={colorPickerPos.x}
-        y={colorPickerPos.y}
-        onSelect={handleColorSelect}
-        onClose={closeColorPicker}
-      />
-    </>
+    <div ref={mountRef} style={{ width: '100%', height: '100vh', margin: 0, padding: 0 }} />
   );
 };
 
