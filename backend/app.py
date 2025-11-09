@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from elevenlabs import ElevenLabs
 from dedalus_labs import AsyncDedalus, DedalusRunner
 import asyncio
-from uuid import uuidv4
+from uuid import uuid4
 
 load_dotenv()
 currentText = ""
@@ -96,12 +96,19 @@ def get_client():
     raise last_err
 
 @app.route('/api/hunyuan/generate', methods=['POST'])
-def generate_hunyuan_model(userid: str):
+def generate_hunyuan_model():
     import time
     start_time = time.time()
     print(f"[{time.strftime('%H:%M:%S')}] === Hunyuan 3D Model Generation Request Started ===")
     
     try:
+        userid = request.form.get('userid')
+        if not userid:
+            print(f"[{time.strftime('%H:%M:%S')}] ERROR: No userid provided")
+            return jsonify({'error': 'userid is required'}), 400
+        
+        print(f"[{time.strftime('%H:%M:%S')}] User ID: {userid}")
+        
         # Get caption from form data
         caption = request.form.get('caption', 'Eric Zou, a male human being, Asian ethnicity')
         print(f"[{time.strftime('%H:%M:%S')}] Caption: {caption}")
@@ -224,13 +231,19 @@ def generate_hunyuan_model(userid: str):
             total_elapsed = time.time() - start_time
             print(f"[{time.strftime('%H:%M:%S')}] === Request completed successfully in {total_elapsed:.1f} seconds ===")
             
-            response = supabase.table("models").insert({
-                "id": uuidv4(),
-                "user_id": userid,
-                "name": caption,
-                "created_at": start_time,
-                "glb_file_url": model_url
-            })
+            # Save model to database
+            try:
+                print(f"[{time.strftime('%H:%M:%S')}] Saving model to database for user {userid}...")
+                response = supabase.table("models").insert({
+                    "id": str(uuid4()),
+                    "user_id": userid,
+                    "name": caption if caption else f"Model_{int(start_time)}",
+                    "glb_file_url": model_url
+                }).execute()
+                print(f"[{time.strftime('%H:%M:%S')}] Model saved to database successfully")
+            except Exception as db_error:
+                print(f"[{time.strftime('%H:%M:%S')}] Database save failed: {db_error}")
+                # Continue anyway - model generation was successful
             
             return jsonify({
                 'success': True,

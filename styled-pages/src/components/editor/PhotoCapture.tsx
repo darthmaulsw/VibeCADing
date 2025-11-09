@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Camera, Upload, X, Download, Loader2 } from 'lucide-react'
 import { removeBackground } from '@imgly/background-removal'
-import { quickSaveModel } from '../../lib/quickStorage'
 
 interface PhotoCaptureProps {
   onPhotoCapture?: (imageData: string) => void;
@@ -44,6 +43,7 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
   const [generationStatus, setGenerationStatus] = useState<string>('');
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [qualityMode, setQualityMode] = useState<'fast' | 'balanced' | 'high'>('balanced');
+  const [modelName, setModelName] = useState<string>('');
 
   useEffect(() => {
     if (stream && videoRef.current && captureMode === 'camera') {
@@ -195,6 +195,14 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
       updateStatus('🚀 Starting 3D model generation...');
       updateStatus('📤 Preparing images for upload...');
 
+      // Get user ID - REQUIRED for backend
+      const userId = localStorage.getItem('3d_system_user_id');
+      if (!userId) {
+        updateStatus('❌ Error: No user ID found - please log in');
+        setGenerating(false);
+        return;
+      }
+      
       // Convert base64 images to Files
       // Use ORIGINAL unprocessed images for better 3D generation quality
       // Hunyuan has its own background removal that's optimized for 3D
@@ -202,8 +210,12 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
       const formData = new FormData();
       formData.append('image', imageFile);
       formData.append('mv_image_front', imageFile); // Front is also the front multi-view
-      formData.append('caption', ''); // Optional caption
+      formData.append('caption', modelName.trim() || `Model_${Date.now()}`); // Model name
+      formData.append('userid', userId); // Required for backend to save to database
       updateStatus('✅ Added front view image (main) - using original for best quality');
+      if (modelName.trim()) {
+        updateStatus(`📝 Model name: ${modelName.trim()}`);
+      }
       if (originalViews.back) {
         const backFile = dataURLtoFile(originalViews.back, 'back-photo.jpg');
         formData.append('mv_image_back', backFile);
@@ -357,35 +369,13 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
         // Stash URL globally for the editor to pick up
         (window as unknown as { VIBECAD_LAST_GLB_URL?: string }).VIBECAD_LAST_GLB_URL = extractedModelUrl;
         
+        updateStatus('💾 Model saved to database by backend!');
         updateStatus('🛰️ Loading model in editor...');
         
-        // Quick save to database (just stores URL, super fast)
-        const userId = localStorage.getItem('3d_system_user_id');
-        if (userId) {
-          updateStatus('💾 Saving to your library...');
-          const modelName = `Model_${new Date().toISOString().slice(0, 19).replace('T', '_')}`;
-          
-          quickSaveModel(extractedModelUrl, modelName, userId)
-            .then((savedModel) => {
-              if (savedModel) {
-                console.log('✅ Model saved to library:', savedModel);
-                updateStatus('✅ Model saved to library!');
-                // Notify app to refresh model list
-                window.dispatchEvent(new CustomEvent('model-saved', { detail: savedModel }));
-              } else {
-                console.warn('⚠️ Could not save model to library');
-                updateStatus('⚠️ Could not save (check console)');
-              }
-            })
-            .catch((err) => {
-              console.error('❌ Error saving model:', err);
-              updateStatus('⚠️ Save failed (model will still load)');
-            });
-        } else {
-          updateStatus('⚠️ Not logged in - model will not be saved');
-        }
+        // Notify app to refresh model list (backend already saved to database)
+        window.dispatchEvent(new CustomEvent('model-saved'));
         
-        // Transition to editor immediately (don't wait for save)
+        // Transition to editor
         setTimeout(() => {
           if (onPhotoCapture) {
             onPhotoCapture(extractedModelUrl);
@@ -1002,6 +992,32 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
                   </span>
                 </button>
               ))}
+            </div>
+
+            {/* Model Name Input */}
+            <div className="mt-6">
+              <label className="block font-mono text-xs mb-2" style={{ color: '#00D4FF' }}>
+                MODEL NAME (optional)
+              </label>
+              <input
+                type="text"
+                value={modelName}
+                onChange={(e) => setModelName(e.target.value)}
+                placeholder="Enter model name..."
+                disabled={generating}
+                className="w-full font-mono text-sm px-4 py-2 bg-transparent transition-all duration-200"
+                style={{
+                  border: '1px solid #00D4FF40',
+                  color: '#00D4FF',
+                  opacity: generating ? 0.5 : 1,
+                  outline: 'none',
+                }}
+                onFocus={(e) => e.target.style.borderColor = '#00D4FF'}
+                onBlur={(e) => e.target.style.borderColor = '#00D4FF40'}
+              />
+              <div className="font-mono text-[10px] mt-1 opacity-60" style={{ color: '#00D4FF' }}>
+                Leave empty for auto-generated name
+              </div>
             </div>
 
             <button
