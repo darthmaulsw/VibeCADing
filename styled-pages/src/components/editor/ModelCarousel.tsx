@@ -1,11 +1,194 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import type { Model } from '../../lib/types';
 
-interface Model {
-  id: string;
-  name: string;
-  thumbnail: string;
-  created_at: string;
+// Component to render 3D model preview - OPTIMIZED to load once and cache
+function Model3DPreview({ modelUrl, isActive }: { modelUrl: string; isActive: boolean }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const sceneDataRef = useRef<{
+    scene: THREE.Scene;
+    camera: THREE.Camera;
+    renderer: THREE.WebGLRenderer;
+    model: THREE.Object3D | null;
+    animationId: number | null;
+    isSetup: boolean;
+  } | null>(null);
+
+  // Setup scene ONCE - only on mount
+  useEffect(() => {
+    if (!canvasRef.current || sceneDataRef.current?.isSetup) return;
+
+    const canvas = canvasRef.current;
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0e1224);
+
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+    camera.position.set(2, 2, 2);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setSize(240, 240);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(5, 10, 7);
+    scene.add(directionalLight);
+
+    sceneDataRef.current = {
+      scene,
+      camera,
+      renderer,
+      model: null,
+      animationId: null,
+      isSetup: true
+    };
+
+    // Load the model ONCE
+    console.log('Loading model from URL:', modelUrl);
+    const loader = new GLTFLoader();
+    loader.load(
+      modelUrl,
+      (gltf) => {
+        if (!sceneDataRef.current) return;
+        
+        console.log('✅ Model loaded successfully:', modelUrl);
+        const model = gltf.scene;
+        
+        // Center and scale model
+        const box = new THREE.Box3().setFromObject(model);
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        const center = new THREE.Vector3();
+        box.getCenter(center);
+        
+        model.position.x = -center.x;
+        model.position.y = -center.y;
+        model.position.z = -center.z;
+        
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const scale = 1.5 / maxDim;
+        model.scale.setScalar(scale);
+        
+        sceneDataRef.current.scene.add(model);
+        sceneDataRef.current.model = model;
+        setIsLoading(false);
+        setLoadError(false);
+      },
+      (progress) => {
+        console.log('Loading progress:', (progress.loaded / progress.total * 100).toFixed(0) + '%');
+      },
+      (error) => {
+        console.error('❌ Error loading model from:', modelUrl);
+        console.error('Error details:', error);
+        setLoadError(true);
+        setIsLoading(false);
+      }
+    );
+
+    return () => {
+      if (sceneDataRef.current) {
+        if (sceneDataRef.current.animationId) {
+          cancelAnimationFrame(sceneDataRef.current.animationId);
+        }
+        sceneDataRef.current.renderer.dispose();
+        if (sceneDataRef.current.model) {
+          sceneDataRef.current.scene.remove(sceneDataRef.current.model);
+        }
+      }
+    };
+  }, [modelUrl]); // Only re-run if modelUrl changes
+
+  // Separate animation effect - only controls rotation
+  useEffect(() => {
+    if (!sceneDataRef.current) return;
+
+    const { scene, camera, renderer, model } = sceneDataRef.current;
+
+    function animate() {
+      if (!sceneDataRef.current) return;
+      
+      sceneDataRef.current.animationId = requestAnimationFrame(animate);
+      
+      // Only rotate if active and model is loaded
+      if (model && isActive) {
+        model.rotation.y += 0.005;
+      }
+      
+      renderer.render(scene, camera);
+    }
+    
+    animate();
+
+    return () => {
+      if (sceneDataRef.current?.animationId) {
+        cancelAnimationFrame(sceneDataRef.current.animationId);
+        sceneDataRef.current.animationId = null;
+      }
+    };
+  }, [isActive]); // Only re-run when isActive changes
+
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <canvas
+        ref={canvasRef}
+        style={{
+          width: '100%',
+          height: '100%',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+        }}
+      />
+      
+      {/* Loading indicator */}
+      {isLoading && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            color: '#00D4FF',
+            fontFamily: 'monospace',
+            fontSize: '12px',
+            zIndex: 10,
+          }}
+        >
+          Loading...
+        </div>
+      )}
+      
+      {/* Error indicator */}
+      {loadError && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            color: '#FF4444',
+            fontFamily: 'monospace',
+            fontSize: '10px',
+            textAlign: 'center',
+            padding: '10px',
+            zIndex: 10,
+          }}
+        >
+          <div>⚠️ Failed to load</div>
+          <div style={{ fontSize: '8px', marginTop: '5px', opacity: 0.7 }}>
+            Check console for details
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 interface ModelCarouselProps {
@@ -86,12 +269,9 @@ export function ModelCarousel({ models, onSelectModel }: ModelCarouselProps) {
                     : '0 0 20px rgba(130, 209, 255, 0.1)',
                 }}
               >
-                <div
-                  className="absolute inset-0 flex items-center justify-center text-6xl"
-                  style={{ color: '#00D4FF', opacity: 0.3 }}
-                >
-                  3D
-                </div>
+                {model.glb_file_url && (
+                  <Model3DPreview modelUrl={model.glb_file_url} isActive={isCenter} />
+                )}
 
                 <div
                   className="absolute bottom-0 left-0 right-0 p-4 font-mono"
