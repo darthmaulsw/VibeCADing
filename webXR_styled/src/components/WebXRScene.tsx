@@ -23,7 +23,7 @@ const MIN_HAND_DISTANCE = 0.05; // 5 cm floor
 const ARM_DELTA = 0.05;         // arming threshold
 const DEADZONE_METERS = 0.015;  // scale jitter deadzone
 const ABS_MIN_SIZE = 0.10;      // min object size (largest dim), meters
-const ABS_MAX_SIZE = 5.00;      // max object size (largest dim), meters
+const ABS_MAX_SIZE = 25.00;      // max object size (largest dim), meters
 
 // Right-stick rotation
 const STICK_DEADZONE = 0.20;    // ignore tiny stick noise (0..1)

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Camera, Upload, X, Download, Loader2 } from 'lucide-react'
 import { removeBackground } from '@imgly/background-removal'
+import { quickSaveModel } from '../../lib/quickStorage'
 
 interface PhotoCaptureProps {
   onPhotoCapture?: (imageData: string) => void;
@@ -17,8 +18,16 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Multi-view photos state
+  // Multi-view photos state - processed versions for preview
   const [capturedViews, setCapturedViews] = useState<{
+    front?: string;
+    back?: string;
+    left?: string;
+    right?: string;
+  }>({});
+  
+  // Original photos state - unprocessed versions for 3D generation
+  const [originalViews, setOriginalViews] = useState<{
     front?: string;
     back?: string;
     left?: string;
@@ -34,6 +43,7 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
   const [generating, setGenerating] = useState<boolean>(false);
   const [generationStatus, setGenerationStatus] = useState<string>('');
   const [modelUrl, setModelUrl] = useState<string | null>(null);
+  const [qualityMode, setQualityMode] = useState<'fast' | 'balanced' | 'high'>('balanced');
 
   useEffect(() => {
     if (stream && videoRef.current && captureMode === 'camera') {
@@ -105,6 +115,9 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
     setProcessingBgRemoval(true);
     setProcessedPreview(null);
 
+    // Save the original unprocessed image for 3D generation
+    setOriginalViews(prev => ({ ...prev, [currentView]: imageData }));
+
     try {
       console.log('[Background Removal] Starting AI-powered background removal...');
       
@@ -129,7 +142,7 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
       setProcessedPreview(processedDataUrl);
       setPreview(processedDataUrl);
       
-      // Save the processed version
+      // Save the processed version for preview
       setCapturedViews(prev => ({ ...prev, [currentView]: processedDataUrl }));
       
     } catch (error) {
@@ -174,53 +187,102 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
       console.log(`[Hunyuan] ${message}`);
     };
 
+    // Declare these outside try block so they're accessible in catch
+    let timeoutId: NodeJS.Timeout | undefined;
+    let progressInterval: NodeJS.Timeout | undefined;
+
     try {
       updateStatus('🚀 Starting 3D model generation...');
       updateStatus('📤 Preparing images for upload...');
 
       // Convert base64 images to Files
-      // Front is the main image
-      const imageFile = dataURLtoFile(capturedViews.front!, 'front-photo.jpg');
+      // Use ORIGINAL unprocessed images for better 3D generation quality
+      // Hunyuan has its own background removal that's optimized for 3D
+      const imageFile = dataURLtoFile(originalViews.front!, 'front-photo.jpg');
       const formData = new FormData();
       formData.append('image', imageFile);
       formData.append('mv_image_front', imageFile); // Front is also the front multi-view
       formData.append('caption', ''); // Optional caption
-      updateStatus('✅ Added front view image (main)');
-      if (capturedViews.back) {
-        const backFile = dataURLtoFile(capturedViews.back, 'back-photo.jpg');
+      updateStatus('✅ Added front view image (main) - using original for best quality');
+      if (originalViews.back) {
+        const backFile = dataURLtoFile(originalViews.back, 'back-photo.jpg');
         formData.append('mv_image_back', backFile);
         updateStatus('✅ Added back view image');
       }
-      if (capturedViews.left) {
-        const leftFile = dataURLtoFile(capturedViews.left, 'left-photo.jpg');
+      if (originalViews.left) {
+        const leftFile = dataURLtoFile(originalViews.left, 'left-photo.jpg');
         formData.append('mv_image_left', leftFile);
         updateStatus('✅ Added left view image');
       }
-      if (capturedViews.right) {
-        const rightFile = dataURLtoFile(capturedViews.right, 'right-photo.jpg');
+      if (originalViews.right) {
+        const rightFile = dataURLtoFile(originalViews.right, 'right-photo.jpg');
         formData.append('mv_image_right', rightFile);
         updateStatus('✅ Added right view image');
       }
 
-      // Enhanced parameters for better quality
-      formData.append('steps', '64'); // Increased from 32
-      formData.append('guidance_scale', '7.0'); // Increased from 5.5
-      formData.append('octree_resolution', '512'); // Increased from 256
-      formData.append('num_chunks', '12000'); // Increased from 8000
+      // Quality-based parameters
+      const qualitySettings = {
+        fast: {
+          steps: 32,
+          guidance_scale: 5.5,
+          octree_resolution: 256,
+          num_chunks: 6000,
+          estimatedTime: '1-2 minutes'
+        },
+        balanced: {
+          steps: 50,
+          guidance_scale: 6.5,
+          octree_resolution: 384,
+          num_chunks: 9000,
+          estimatedTime: '2-4 minutes'
+        },
+        high: {
+          steps: 64,
+          guidance_scale: 7.0,
+          octree_resolution: 512,
+          num_chunks: 12000,
+          estimatedTime: '4-8 minutes'
+        }
+      };
+
+      const settings = qualitySettings[qualityMode];
+      formData.append('steps', settings.steps.toString());
+      formData.append('guidance_scale', settings.guidance_scale.toString());
+      formData.append('octree_resolution', settings.octree_resolution.toString());
+      formData.append('num_chunks', settings.num_chunks.toString());
       formData.append('check_box_rembg', 'true');
       formData.append('seed', '42');
       formData.append('randomize_seed', 'false');
       
-      updateStatus('⚙️ Using enhanced parameters: steps=64, resolution=512, chunks=12000');
+      updateStatus(`⚙️ Quality: ${qualityMode.toUpperCase()} (est. ${settings.estimatedTime})`);
 
       updateStatus('📡 Sending request to backend server...');
-      updateStatus('⏳ Waiting for server response (this may take several minutes)...');
+      updateStatus('⏳ Waiting for server response (this may take 2-5 minutes)...');
+      updateStatus('🔄 Generation in progress... please be patient');
 
       const startTime = Date.now();
+      
+      // Create AbortController with 10 minute timeout (600 seconds)
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => {
+        controller.abort();
+        updateStatus('⏱️ Request timeout - generation took too long (>10 minutes)');
+      }, 600000); // 10 minutes
+      
+      // Show progress updates every 30 seconds
+      progressInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        updateStatus(`⏳ Still generating... ${elapsed}s elapsed (this is normal for complex models)`);
+      }, 30000);
+
       const res = await fetch('http://localhost:8000/api/hunyuan/generate', {
         method: 'POST',
         body: formData,
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
+      clearInterval(progressInterval);
 
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
       updateStatus(`📥 Received response after ${elapsed} seconds`);
@@ -294,14 +356,41 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
         
         // Stash URL globally for the editor to pick up
         (window as unknown as { VIBECAD_LAST_GLB_URL?: string }).VIBECAD_LAST_GLB_URL = extractedModelUrl;
-        updateStatus('🛰️ Transitioning to editor...');
         
-        // Transition to the full editor view after a short delay to show the success message
+        updateStatus('🛰️ Loading model in editor...');
+        
+        // Quick save to database (just stores URL, super fast)
+        const userId = localStorage.getItem('3d_system_user_id');
+        if (userId) {
+          updateStatus('💾 Saving to your library...');
+          const modelName = `Model_${new Date().toISOString().slice(0, 19).replace('T', '_')}`;
+          
+          quickSaveModel(extractedModelUrl, modelName, userId)
+            .then((savedModel) => {
+              if (savedModel) {
+                console.log('✅ Model saved to library:', savedModel);
+                updateStatus('✅ Model saved to library!');
+                // Notify app to refresh model list
+                window.dispatchEvent(new CustomEvent('model-saved', { detail: savedModel }));
+              } else {
+                console.warn('⚠️ Could not save model to library');
+                updateStatus('⚠️ Could not save (check console)');
+              }
+            })
+            .catch((err) => {
+              console.error('❌ Error saving model:', err);
+              updateStatus('⚠️ Save failed (model will still load)');
+            });
+        } else {
+          updateStatus('⚠️ Not logged in - model will not be saved');
+        }
+        
+        // Transition to editor immediately (don't wait for save)
         setTimeout(() => {
           if (onPhotoCapture) {
             onPhotoCapture(extractedModelUrl);
           }
-        }, 1000);
+        }, 500);
       } else if (data.error) {
         updateStatus(`❌ Error: ${data.error}`);
         setModelUrl(null);
@@ -311,8 +400,22 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
       }
       
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      updateStatus(`❌ Request failed: ${errorMessage}`);
+      // Clear intervals if they exist
+      if (timeoutId) clearTimeout(timeoutId);
+      if (progressInterval) clearInterval(progressInterval);
+      
+      // Handle different error types
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          updateStatus('⏱️ Request timed out after 10 minutes');
+          updateStatus('💡 Tip: Try with fewer views or lower quality settings');
+          updateStatus('💡 Or try reducing steps/resolution in the code');
+        } else {
+          updateStatus(`❌ Request failed: ${error.message}`);
+        }
+      } else {
+        updateStatus('❌ Request failed: Unknown error');
+      }
       setModelUrl(null);
     } finally {
       setGenerating(false);
@@ -330,6 +433,7 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
 
   const resetAllViews = () => {
     setCapturedViews({});
+    setOriginalViews({});
     setPreview(null);
     setOriginalPreview(null);
     setProcessedPreview(null);
@@ -354,7 +458,7 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
   };
 
   const hasMinimumViews = () => {
-    return !!capturedViews.front;
+    return !!originalViews.front;
   };
 
   return (
@@ -875,10 +979,35 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
               )}
             </div>
 
+            {/* Quality Mode Selector */}
+            <div className="flex gap-4 items-center justify-center mt-4">
+              <span className="font-mono text-xs" style={{ color: '#00D4FF' }}>QUALITY:</span>
+              {(['fast', 'balanced', 'high'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setQualityMode(mode)}
+                  disabled={generating}
+                  className="font-mono text-xs px-4 py-2 transition-all duration-200"
+                  style={{
+                    background: qualityMode === mode ? 'rgba(0, 212, 255, 0.3)' : 'rgba(0, 212, 255, 0.05)',
+                    border: `1px solid ${qualityMode === mode ? '#00D4FF' : '#00D4FF40'}`,
+                    color: qualityMode === mode ? '#00D4FF' : '#00D4FF80',
+                    opacity: generating ? 0.5 : 1,
+                    cursor: generating ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {mode.toUpperCase()}
+                  <span className="ml-2 opacity-60">
+                    ({mode === 'fast' ? '~2min' : mode === 'balanced' ? '~3min' : '~5min'})
+                  </span>
+                </button>
+              ))}
+            </div>
+
             <button
               onClick={generate3DModel}
               disabled={generating}
-              className="font-mono transition-all duration-300 flex items-center gap-3"
+              className="font-mono transition-all duration-300 flex items-center gap-3 mt-6"
               style={{
                 padding: '16px 48px',
                 background: generating ? 'rgba(0, 212, 255, 0.1)' : 'rgba(0, 212, 255, 0.2)',

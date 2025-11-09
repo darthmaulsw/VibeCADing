@@ -1,109 +1,207 @@
-```openscad
-// Snowman OpenSCAD Model
-// A complete snowman with three stacked spheres, hat, arms, face features, and buttons
-// All parts are unioned into a single connected object
-// Sized to fit within 25x25x25 units, centered on origin, base at Z=0
+// Parametric Coffee Mug - Generated Automated CAD Model
+// Date: 2024
+// Description: Fully parametric printable coffee mug with handle, fillets, and rim rounding
 
-// ===== PARAMETERS =====
-// Overall scale factor
-overall_scale = 1.0;
+// ========================================
+// PARAMETERS (User-adjustable)
+// ========================================
 
-// Sphere radii (scaled)
-bottom_radius = 5.5 * overall_scale;
-middle_radius = 4.0 * overall_scale;
-head_radius = 3.0 * overall_scale;
+// Mug body dimensions
+outer_diameter = 85;        // mm, overall outside diameter
+inner_diameter = 78;        // mm, nominal inside diameter at top (before inner lip rounding)
+mug_height = 95;            // mm, rim to base
+wall_thickness = 3.5;       // mm, wall thickness (default computed from diameters)
+base_thickness = 4;         // mm, solid base thickness
 
-// Facet count for smoothness
-$fn = 60;
+// Handle parameters
+handle_thickness = 8;       // mm, cross-section thickness of handle
+handle_clearance = 12;      // mm, minimum gap between inner handle surface and mug body
+handle_center_distance = (outer_diameter/2) + 12; // mm, radial distance of handle center-path from mug center
+handle_attach_height = [mug_height*0.30, mug_height*0.70]; // mm, [lower, upper] attachment heights
 
-// Feature sizes
-eye_radius = 0.15 * overall_scale;
-nose_length = 1.2 * overall_scale;
-nose_base_radius = 0.3 * overall_scale;
-button_radius = 0.2 * overall_scale;
-arm_length = 4.5 * overall_scale;
-arm_radius = 0.15 * overall_scale;
+// Aesthetic parameters
+fillet_radius = 2;          // mm, default fillet radius for edges
+rim_chamfer = 1;            // mm, chamfer or lip height on top edge
+top_inner_radius = 2;       // mm, inner lip rounding for comfortable drinking
+lid_compatible = false;     // boolean, add lid seating feature (not implemented in basic version)
 
-// Hat dimensions
-hat_brim_radius = 3.8 * overall_scale;
-hat_brim_height = 0.4 * overall_scale;
-hat_top_radius = 2.2 * overall_scale;
-hat_top_height = 3.0 * overall_scale;
+// Debug and rendering
+debug = false;              // boolean, visualize internal cavity in contrasting color
+$fn_param = 100;            // polygon resolution for circles/rounds
 
-// Mouth sphere parameters
-mouth_sphere_radius = 0.12 * overall_scale;
+// Computed parameters
+computed_wall_thickness = (outer_diameter - inner_diameter) / 2;
+effective_wall_thickness = wall_thickness; // Use explicit wall_thickness parameter
 
-// ===== MAIN ASSEMBLY =====
-union() {
-    // Bottom sphere (slightly flattened at base)
-    translate([0, 0, bottom_radius * 0.95])
-        sphere(r = bottom_radius);
+// Sanity checks
+min_wall = 2.0; // mm, minimum recommended wall thickness
+// Warning: If wall_thickness < 2.0 mm, printability may be reduced
+
+// ========================================
+// GLOBAL SETTINGS
+// ========================================
+$fn = $fn_param;
+
+// ========================================
+// MODULES
+// ========================================
+
+// Module: mug_body()
+// Creates the outer shell with inner cavity subtracted
+module mug_body() {
+    difference() {
+        // Outer shell
+        outer_shell();
+        
+        // Inner cavity (subtract to make hollow)
+        if (debug) {
+            color("red", 0.5) inner_cavity();
+        } else {
+            inner_cavity();
+        }
+    }
+}
+
+// Module: outer_shell()
+// Creates the solid outer body with fillets
+module outer_shell() {
+    outer_radius = outer_diameter / 2;
     
-    // Middle sphere (positioned on top of bottom)
-    translate([0, 0, bottom_radius * 1.9 + middle_radius * 0.85])
-        sphere(r = middle_radius);
-    
-    // Head sphere (positioned on top of middle)
-    translate([0, 0, bottom_radius * 1.9 + middle_radius * 1.7 + head_radius * 0.9])
-        sphere(r = head_radius);
-    
-    // === FACE FEATURES ===
-    // Left eye (coal - black sphere embedded in head)
-    translate([-0.8 * overall_scale, head_radius * 0.85, bottom_radius * 1.9 + middle_radius * 1.7 + head_radius * 1.3])
-        sphere(r = eye_radius);
-    
-    // Right eye
-    translate([0.8 * overall_scale, head_radius * 0.85, bottom_radius * 1.9 + middle_radius * 1.7 + head_radius * 1.3])
-        sphere(r = eye_radius);
-    
-    // Carrot nose (cone pointing forward)
-    translate([0, head_radius * 0.9, bottom_radius * 1.9 + middle_radius * 1.7 + head_radius * 0.95])
-        rotate([90, 0, 0])
-            cylinder(h = nose_length, r1 = nose_base_radius, r2 = 0.05 * overall_scale);
-    
-    // Mouth (5 small spheres in an arc)
-    for (i = [-2:2]) {
-        translate([i * 0.35 * overall_scale, 
-                   head_radius * 0.85, 
-                   bottom_radius * 1.9 + middle_radius * 1.7 + head_radius * 0.5 - abs(i) * 0.1 * overall_scale])
-            sphere(r = mouth_sphere_radius);
+    // Main body with bottom fillet
+    hull() {
+        // Bottom ring for fillet
+        translate([0, 0, fillet_radius])
+            cylinder(r = outer_radius - fillet_radius, h = 0.01);
+        
+        // Top of mug body (before rim processing)
+        translate([0, 0, mug_height - fillet_radius])
+            cylinder(r = outer_radius, h = 0.01);
     }
     
-    // === BUTTONS (on middle sphere) ===
-    // Top button
-    translate([0, middle_radius * 0.95, bottom_radius * 1.9 + middle_radius * 1.3])
-        sphere(r = button_radius);
-    
-    // Middle button
-    translate([0, middle_radius * 0.95, bottom_radius * 1.9 + middle_radius * 0.85])
-        sphere(r = button_radius);
-    
-    // Bottom button
-    translate([0, middle_radius * 0.95, bottom_radius * 1.9 + middle_radius * 0.4])
-        sphere(r = button_radius);
-    
-    // === ARMS (stick arms) ===
-    // Left arm
-    translate([-middle_radius * 0.7, 0, bottom_radius * 1.9 + middle_radius * 1.0])
-        rotate([0, -25, -15])
-            cylinder(h = arm_length, r = arm_radius);
-    
-    // Right arm
-    translate([middle_radius * 0.7, 0, bottom_radius * 1.9 + middle_radius * 1.0])
-        rotate([0, 25, 15])
-            cylinder(h = arm_length, r = arm_radius);
-    
-    // === HAT (top hat style) ===
-    // Hat brim (wide flat cylinder)
-    translate([0, 0, bottom_radius * 1.9 + middle_radius * 1.7 + head_radius * 1.8])
-        cylinder(h = hat_brim_height, r = hat_brim_radius);
-    
-    // Hat top (tall cylinder)
-    translate([0, 0, bottom_radius * 1.9 + middle_radius * 1.7 + head_radius * 1.8 + hat_brim_height])
-        cylinder(h = hat_top_height, r = hat_top_radius);
-    
-    // Hat connector (ensures connection between brim and top)
-    translate([0, 0, bottom_radius * 1.9 + middle_radius * 1.7 + head_radius * 1.8])
-        cylinder(h = hat_brim_height + 0.2, r = hat_top_radius);
+    // Top rim rounding (outer edge)
+    rotate_extrude()
+        translate([outer_radius - fillet_radius, mug_height - fillet_radius, 0])
+            circle(r = fillet_radius);
 }
-```
+
+// Module: inner_cavity()
+// Creates the inner cavity to be subtracted from outer shell
+module inner_cavity() {
+    inner_radius = inner_diameter / 2;
+    cavity_depth = mug_height - base_thickness - top_inner_radius;
+    
+    // Main cylindrical cavity
+    translate([0, 0, base_thickness])
+        cylinder(r = inner_radius, h = cavity_depth + 0.01);
+    
+    // Top inner lip rounding (for comfortable drinking)
+    translate([0, 0, mug_height - top_inner_radius])
+        rotate_extrude()
+            translate([inner_radius, 0, 0])
+                circle(r = top_inner_radius);
+}
+
+// Module: mug_handle()
+// Creates the handle with C-shaped profile and attachments
+module mug_handle() {
+    outer_radius = outer_diameter / 2;
+    
+    // Handle path parameters
+    handle_width = handle_thickness;
+    handle_depth = handle_thickness;
+    
+    // C-shape path parameters
+    path_radius = handle_center_distance - outer_radius;
+    handle_angle_start = -45;   // degrees
+    handle_angle_end = 45;      // degrees
+    handle_sweep = handle_angle_end - handle_angle_start;
+    
+    // Attachment positions
+    attach_lower = handle_attach_height[0];
+    attach_upper = handle_attach_height[1];
+    attach_mid = (attach_lower + attach_upper) / 2;
+    
+    union() {
+        // Main handle arc
+        difference() {
+            union() {
+                // Outer handle path with vertical arc
+                for (angle = [handle_angle_start : 5 : handle_angle_end]) {
+                    hull() {
+                        // Current position
+                        translate([
+                            cos(angle) * handle_center_distance,
+                            sin(angle) * handle_center_distance,
+                            attach_lower + (attach_upper - attach_lower) * 
+                                (angle - handle_angle_start) / handle_sweep
+                        ])
+                            sphere(d = handle_depth);
+                        
+                        // Next position
+                        translate([
+                            cos(angle + 5) * handle_center_distance,
+                            sin(angle + 5) * handle_center_distance,
+                            attach_lower + (attach_upper - attach_lower) * 
+                                (angle + 5 - handle_angle_start) / handle_sweep
+                        ])
+                            sphere(d = handle_depth);
+                    }
+                }
+                
+                // Lower attachment blend
+                hull() {
+                    translate([outer_radius, 0, attach_lower])
+                        sphere(d = handle_depth);
+                    translate([
+                        cos(handle_angle_start) * handle_center_distance,
+                        sin(handle_angle_start) * handle_center_distance,
+                        attach_lower
+                    ])
+                        sphere(d = handle_depth);
+                }
+                
+                // Upper attachment blend
+                hull() {
+                    translate([outer_radius, 0, attach_upper])
+                        sphere(d = handle_depth);
+                    translate([
+                        cos(handle_angle_end) * handle_center_distance,
+                        sin(handle_angle_end) * handle_center_distance,
+                        attach_upper
+                    ])
+                        sphere(d = handle_depth);
+                }
+            }
+        }
+    }
+}
+
+// Module: assemble_mug()
+// Assembles the complete mug with body and handle
+module assemble_mug() {
+    union() {
+        // Mug body
+        if (debug) {
+            color("lightblue", 0.7) 
+                difference() {
+                    outer_shell();
+                }
+            color("red", 0.3)
+                inner_cavity();
+        } else {
+            mug_body();
+        }
+        
+        // Handle
+        if (debug) {
+            color("green", 0.7) mug_handle();
+        } else {
+            mug_handle();
+        }
+    }
+}
+
+// ========================================
+// MAIN EXECUTION
+// ========================================
+assemble_mug();

@@ -22,4 +22,8 @@ def mkprompt(p: str) -> str:
         If this specific item is found online, use specific reference OpenSCAD files when possible. 
         
         Ensure that the dimensions are small enough (at most they should be <25) so that they can be compiled. 
+
+        
+        
+        IMPORTANT: MAKE SURE TO FIND REFERENCE IMAGES FIRST BEFORE OUTLINING THE PROMPT.
     """

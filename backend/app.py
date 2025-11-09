@@ -268,7 +268,10 @@ def get_response():
     # Build the prompt using the same template, substituting currentText
     global currentText
     prompt_template = (
-        """ based on ${currentText} generate a quick response about what CAD model you are going to generate
+        """ 
+                RIGHT AWAY, HANDOFF THE TASK TO GEMINI. GEMINI WILL DO THE FOLLOWING:
+               
+                based on ${currentText} generate a quick response about what CAD model you are going to generate
                 this response should be about a sentence long, this response basically informs the user that the model is in fact being
                 generated and they should wait until it is done being finalized.
 
@@ -291,7 +294,7 @@ def get_response():
         async def _run():
             return await runner.run(
                 input=prompt,
-                model=["claude-sonnet-4-20250514"],
+                model=["openai/gpt-5", "gemini-2.5-flash"],
                 mcp_servers=["windsor/brave-search-mcp"],
                 stream=False,
             )
