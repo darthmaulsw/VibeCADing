@@ -11,6 +11,7 @@ from elevenlabs import ElevenLabs
 from dedalus_labs import AsyncDedalus, DedalusRunner
 import asyncio
 from uuid import uuid4
+from fin import get_cad
 
 load_dotenv()
 currentText = ""
@@ -423,6 +424,28 @@ def transcribe_audio():
 @app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({'status': 'ok'})
+
+@app.route('/api/claude/generate', methods=['GET'])
+def generate_claude():
+    import time
+    startTime = time.time()
+    p = request.form.get("prompt")
+    userid = request.form.get("userid")
+    asyncio.run(get_cad(p))
+    with open("output.scad", "r", encoding="utf-8") as shamalama:
+        cont = shamalama.read()
+    shit = cont.removeprefix("```openscad").removesuffix("```")
+    response = supabase.table("models").insert({
+        "id": str(uuid4()),
+        "user_id": userid,
+        "name": p,
+        "created_at": time.time(),
+        "scad_code": shit
+    }).execute()
+    return jsonify({
+        'success': True,
+        'scadcode': shit
+    })
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000, debug=True)
