@@ -11,6 +11,7 @@ from elevenlabs import ElevenLabs
 from dedalus_labs import AsyncDedalus, DedalusRunner
 import asyncio
 from uuid import uuid4
+from fin import get_cad
 
 load_dotenv()
 currentText = ""
@@ -38,7 +39,16 @@ else:
     dedalus = AsyncDedalus(api_key=dedalus_api_key)
 
 app = Flask(__name__)
-CORS(app)
+
+# CORS configuration - allow localhost for development and all origins for production
+# For production, you can restrict this to specific domains
+cors_origins = os.getenv('CORS_ORIGINS', 'http://localhost:5173,http://localhost:5174,http://localhost:3000').split(',')
+
+# In production, allow all origins (you can restrict this later)
+if os.getenv('FLASK_ENV') == 'production' or os.getenv('DYNO'):  # DYNO is set by Heroku
+    CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
+else:
+    CORS(app, origins=cors_origins, supports_credentials=True)
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
@@ -423,6 +433,51 @@ def transcribe_audio():
 @app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({'status': 'ok'})
+
+@app.route('/api/claude/generate', methods=['GET'])
+def generate_claude():
+    import time
+    p = request.form.get("prompt")
+    userid = request.form.get("userid")
+    modelid = request.form.get("modelid")
+    asyncio.run(get_cad(p))
+    with open("output.scad", "r", encoding="utf-8") as shamalama:
+        cont = shamalama.read()
+    shit = cont.removeprefix("```openscad").removesuffix("```")
+    response = supabase.table("models").insert({
+        "id": modelid,
+        "user_id": userid,
+        "name": p,
+        "created_at": time.time(),
+        "scad_code": shit
+    }).execute()
+    return jsonify({
+        'success': True,
+        'scadcode': shit
+    })
+    
+@app.route('/api/claude/edit', methods=['GET'])
+def edit_claude():
+    import time
+    p = request.form.get("prompt")
+    userid = request.form.get("userid")
+    modelid = request.form.get("modelid")
+    response = supabase.table("models").select("*").eq("id", modelid).eq("user_id", userid).single().execute()
+    if response.data:
+        ret = response.data
+    else:
+        raise("no file found")
+    old = ret["scad_code"]
+    oldp = ret["name"]
+    asyncio.run(wrapper(old, p, oldp))
+    with open("edited.scad", "r", encoding="utf-8") as shamalama:
+        cont = shamalama.read()
+    shit = cont.removeprefix("```openscad").removesuffix("```")
+    response = supabase.table("models").update({"scad_code", shit}).eq("id", modelid).eq("user_id", userid).execute()
+    return jsonify({
+        'success': True,
+        'scadcode': shit
+    })
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000, debug=True)

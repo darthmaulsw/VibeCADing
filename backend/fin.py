@@ -3,7 +3,6 @@ import asyncio
 from dedalus_labs import AsyncDedalus, DedalusRunner, Dedalus
 from prompts import mkprompt
 import os
-from dedalus_labs.utils.streaming import stream_sync
 import anthropic
 from flask import Flask, jsonify
 import threading
@@ -59,11 +58,10 @@ async def get_cad(user_prompt):
         model=["openai/gpt-5-mini","claude-sonnet-4-20250514"],
         tools = [gen_cad, mkprompt, ],
         mcp_servers=["windsor/brave-search-mcp", 'akakak/sonar', 'windsor/context7'],
-        stream=True,
+        stream=False,
         verbose=True,
     )
-    stream_sync(result)
-    print()
+    print("Dedalus run completed:", result)
     
 # async def writeToFile(text):
 #     with open('output.scad', 'w') as f:

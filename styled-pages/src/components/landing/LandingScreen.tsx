@@ -20,6 +20,8 @@ export function LandingScreen({ onSelectMode }: LandingScreenProps) {
   const [welcomeText, setWelcomeText] = useState('');
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
   const initializedRef = useRef(false);
+  const usernameInputRef = useRef<HTMLInputElement>(null);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (initializedRef.current) return;
@@ -222,8 +224,9 @@ export function LandingScreen({ onSelectMode }: LandingScreenProps) {
 
       setInputUsername('');
       setInputPassword('');
-    } catch (err: any) {
-      addLine(`E: ${err.message || 'An error occurred'}`);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'An error occurred';
+      addLine(`E: ${errorMessage}`);
       addLine('');
       setInputUsername('');
       setInputPassword('');
@@ -241,10 +244,24 @@ export function LandingScreen({ onSelectMode }: LandingScreenProps) {
     setInputMode('username');
   };
 
+  // Focus inputs when switching modes
+  useEffect(() => {
+    if (inputMode === 'username' && usernameInputRef.current) {
+      setTimeout(() => usernameInputRef.current?.focus(), 100);
+    } else if (inputMode === 'password' && passwordInputRef.current) {
+      setTimeout(() => passwordInputRef.current?.focus(), 100);
+    }
+  }, [inputMode]);
+
   useEffect(() => {
     if (isTyping) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Skip keyboard handling if an input is focused (let the input handle it)
+      if (inputMode !== 'none' && (e.target instanceof HTMLInputElement)) {
+        return;
+      }
+
       if (mode === 'menu') {
         if (e.key === '1') {
           setSelectedIndex(0);
@@ -496,28 +513,75 @@ export function LandingScreen({ onSelectMode }: LandingScreenProps) {
           </div>
         )}
         {!currentLine && inputMode !== 'none' && (
-          <div style={{ color: '#BD93F9' }}>
+          <div style={{ color: '#BD93F9', display: 'flex', alignItems: 'center', gap: '8px' }}>
             {inputMode === 'username' && (
               <>
-                <span style={{ color: '#8BE9FD' }}>Username:</span> {inputUsername}
+                <span style={{ color: '#8BE9FD' }}>Username:</span>
+                <input
+                  ref={usernameInputRef}
+                  type="text"
+                  value={inputUsername}
+                  onChange={(e) => setInputUsername(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && inputUsername.length > 0) {
+                      e.preventDefault();
+                      setInputMode('password');
+                    }
+                  }}
+                  onClick={(e) => e.currentTarget.focus()}
+                  style={{
+                    flex: 1,
+                    background: 'transparent',
+                    border: 'none',
+                    outline: 'none',
+                    color: '#BD93F9',
+                    fontFamily: "'Space Mono', monospace",
+                    fontSize: '14px',
+                    padding: '4px 8px',
+                    minWidth: '200px',
+                    minHeight: '24px',
+                    caretColor: '#50FA7B',
+                    cursor: 'text',
+                    borderRadius: '2px',
+                  }}
+                  placeholder=""
+                />
               </>
             )}
             {inputMode === 'password' && (
               <>
-                <span style={{ color: '#8BE9FD' }}>Password:</span> {'*'.repeat(inputPassword.length)}
+                <span style={{ color: '#8BE9FD' }}>Password:</span>
+                <input
+                  ref={passwordInputRef}
+                  type="password"
+                  value={inputPassword}
+                  onChange={(e) => setInputPassword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && inputPassword.length > 0) {
+                      e.preventDefault();
+                      handleAuth();
+                    }
+                  }}
+                  onClick={(e) => e.currentTarget.focus()}
+                  style={{
+                    flex: 1,
+                    background: 'transparent',
+                    border: 'none',
+                    outline: 'none',
+                    color: '#BD93F9',
+                    fontFamily: "'Space Mono', monospace",
+                    fontSize: '14px',
+                    padding: '4px 8px',
+                    minWidth: '200px',
+                    minHeight: '24px',
+                    caretColor: '#50FA7B',
+                    cursor: 'text',
+                    borderRadius: '2px',
+                  }}
+                  placeholder=""
+                />
               </>
             )}
-            <span
-              style={{
-                display: 'inline-block',
-                width: '8px',
-                height: '18px',
-                background: '#50FA7B',
-                marginLeft: '2px',
-                verticalAlign: 'middle',
-                opacity: showCursor ? 0.8 : 0,
-              }}
-            />
           </div>
         )}
       </div>
