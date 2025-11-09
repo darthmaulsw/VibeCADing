@@ -6,6 +6,7 @@ export interface Model {
   scad_code?: string;
   glb_file_url?: string;
   stl_file_url?: string;
+  obj_file_url?: string;
 }
 
 export interface User {
