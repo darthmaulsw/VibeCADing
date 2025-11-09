@@ -69,6 +69,6 @@ async def get_cad(user_prompt):
     
 if __name__=="__main__":
     # pp = "a gaming mouse"
-    asyncio.run(get_cad("a BIC lighter, not the ones with the long nozzle, just a regular lighter"))
+    asyncio.run(get_cad("I want a gears mechanism with at least 5 interlocking gears of varying sizes, make it solid and metal"))
     # with open('output.scad', 'w') as f:
     #     f.write(gc)

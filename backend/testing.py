@@ -70,4 +70,4 @@ async def iterate_cad(user_prompt, scad_code):
 
 
 if __name__=="__main__":
-    asyncio.run(iterate_cad("The lighter cap is not attached to the top of the body, make sure it is attached and the lighter looks realistic", scad_code))
+    asyncio.run(iterate_cad("Hey, look at the scad file again, the gears aren't rendering and make sure the scad code is actually valid before giving it to me", scad_code))
