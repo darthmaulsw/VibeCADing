@@ -39,7 +39,16 @@ else:
     dedalus = AsyncDedalus(api_key=dedalus_api_key)
 
 app = Flask(__name__)
-CORS(app)
+
+# CORS configuration - allow localhost for development and all origins for production
+# For production, you can restrict this to specific domains
+cors_origins = os.getenv('CORS_ORIGINS', 'http://localhost:5173,http://localhost:5174,http://localhost:3000').split(',')
+
+# In production, allow all origins (you can restrict this later)
+if os.getenv('FLASK_ENV') == 'production' or os.getenv('DYNO'):  # DYNO is set by Heroku
+    CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
+else:
+    CORS(app, origins=cors_origins, supports_credentials=True)
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
