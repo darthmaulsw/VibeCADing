@@ -12,6 +12,7 @@ from dedalus_labs import AsyncDedalus, DedalusRunner
 import asyncio
 from uuid import uuid4
 from fin import get_cad
+from testing import iterate_cad
 
 load_dotenv()
 currentText = ""
@@ -469,8 +470,8 @@ def edit_claude():
         raise("no file found")
     old = ret["scad_code"]
     oldp = ret["name"]
-    asyncio.run(wrapper(old, p, oldp))
-    with open("edited.scad", "r", encoding="utf-8") as shamalama:
+    asyncio.run(iterate_cad(p, old))
+    with open("outputIterated.scad", "r", encoding="utf-8") as shamalama:
         cont = shamalama.read()
     shit = cont.removeprefix("```openscad").removesuffix("```")
     response = supabase.table("models").update({"scad_code", shit}).eq("id", modelid).eq("user_id", userid).execute()
