@@ -856,26 +856,39 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         prevStickClickRef.current = isThumbstickClick(leftGamepadRef.current ?? undefined);
       }
       
-      // Handle color picker interaction
+      // Handle color picker interaction with adaptive deadzone and hysteresis
       if (colorPickerOpen && leftGamepadRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current) {
         const gp = leftGamepadRef.current;
         
-        // Get joystick input for hue selection using readStick helper
-        const { x: stickX, y: stickY } = readStick(leftGamepadRef.current, 'left');
+        // Get joystick input using legacy method (same as menu)
+        const { x: lx, y: ly } = getLeftStickLegacy(gp);
+        const mag = Math.hypot(lx, ly);
         
-        const stickDeadzone = 0.1;
+        // Adaptive deadzone (same as menu)
+        let dz = 0.08;
+        if (mag > 0.6) dz = 0.04;
         
-        // Update hue based on joystick angle
-        if (Math.abs(stickX) > stickDeadzone || Math.abs(stickY) > stickDeadzone) {
-          const angle = Math.atan2(stickX, -stickY);
-          const normalizedAngle = (angle + Math.PI * 2) % (Math.PI * 2);
+        const currentHue = colorPickerStateRef.current.hue;
+        const armed = mag > dz;
+        const hysteresis = dz + 0.03;
+        
+        // Update hue based on joystick angle (only when clearly outside hysteresis)
+        if (armed && mag > hysteresis) {
+          // Angle in radians: right = 0, up = -PI/2, CCW positive
+          const angle = Math.atan2(-ly, lx);
+          // Normalize to [0, 2PI)
+          let normalizedAngle = angle;
+          if (normalizedAngle < 0) normalizedAngle += Math.PI * 2;
+          
+          // Convert to hue (0-360)
           const newHue = Math.floor((normalizedAngle / (Math.PI * 2)) * 360);
           
-          if (Math.abs(colorPickerStateRef.current.hue - newHue) > 5) {
+          // Only update if changed significantly (hysteresis for hue)
+          if (Math.abs(currentHue - newHue) > 3 || Math.abs(currentHue - newHue + 360) > 3 || Math.abs(currentHue - newHue - 360) > 3) {
             colorPickerStateRef.current.hue = newHue;
             
             // Update color immediately
-            const color = `hsl(${colorPickerStateRef.current.hue}, ${colorPickerStateRef.current.saturation}%, ${colorPickerStateRef.current.lightness}%)`;
+            const color = `hsl(${newHue}, ${colorPickerStateRef.current.saturation}%, ${colorPickerStateRef.current.lightness}%)`;
             handleColorSelect(color);
           }
         }
