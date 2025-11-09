@@ -16,6 +16,105 @@ from testing import iterate_cad
 
 load_dotenv()
 currentText = ""
+generation_jobs = {}
+
+# Utility to generate CAD via get_cad and store in Supabase
+def _generate_cad_model(prompt: str, userid: str | None = None, modelid: str | None = None):
+    """Run get_cad(prompt) (async) to produce output.scad, clean code fences, insert into Supabase.
+    Returns (model_id, scad_code)."""
+    if not prompt:
+        return None, None
+    mid = modelid or str(uuid4())
+    # Run async get_cad
+    try:
+        asyncio.run(get_cad(prompt))
+    except RuntimeError:
+        # In case an event loop already running, fallback to new loop
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(get_cad(prompt))
+        finally:
+            loop.close()
+    scad_code = None
+    if os.path.exists("output.scad"):
+        with open("output.scad", "r", encoding="utf-8") as f:
+            raw = f.read()
+        scad_code = raw.removeprefix("```openscad").removesuffix("```")
+    # Persist if userid provided
+    if userid and scad_code:
+        try:
+            import time as _time
+            supabase.table("models").insert({
+                "id": mid,
+                "user_id": userid,
+                "name": prompt,
+                "created_at": _time.time(),
+                "scad_code": scad_code
+            }).execute()
+        except Exception as db_e:  # noqa: BLE001
+            print("[WARN] Supabase insert failed:", db_e)
+    return mid, scad_code
+
+# Helper: status update (Dedalus + TTS) used between transcription and generation
+def _status_update(text: str):
+    """Produce a short status sentence about impending CAD generation and synthesize audio.
+    Returns (status_text, audio_b64). Falls back gracefully if APIs unavailable."""
+    status_text = """Preparing CAD model based on your description; hang tight while we generate it."""
+    try:
+        # Build prompt similar to /api/getresponse
+        prompt_template = (
+            """
+            based on ${currentText} generate a quick response about what CAD model you are going to generate.
+            This must be ONE short sentence telling the user it's being generated. No fluff, no feature list, no brands.
+            Do NOT say you cannot create it. Return ONLY the sentence.
+            """
+        )
+        prompt = prompt_template.replace("${currentText}", text or "")
+        client = AsyncDedalus() if os.getenv("DEDALUS_API_KEY") else None
+        if client:
+            runner = DedalusRunner(client)
+            async def _run():
+                return await runner.run(
+                    input=prompt,
+                    model=["openai/gpt-5", "gemini-2.5-flash"],
+                    mcp_servers=["windsor/brave-search-mcp"],
+                    stream=False,
+                )
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = None
+            if loop and loop.is_running():
+                new_loop = asyncio.new_event_loop()
+                try:
+                    asyncio.set_event_loop(new_loop)
+                    result = new_loop.run_until_complete(_run())
+                finally:
+                    new_loop.close()
+                    asyncio.set_event_loop(loop)
+            elif loop:
+                result = loop.run_until_complete(_run())
+            else:
+                result = asyncio.run(_run())
+            status_text = getattr(result, "final_output", None) or str(result)
+    except Exception as e:  # noqa: BLE001
+        print("[WARN] Status Dedalus failed:", e)
+
+    audio_b64 = None
+    try:
+        if elevenlabs and status_text:
+            audio_obj = elevenlabs.text_to_speech.convert(
+                text=status_text,
+                voice_id="IKne3meq5aSn9XLyUdCD",
+                model_id="eleven_multilingual_v2",
+                output_format="mp3_44100_128",
+            )
+            audio_bytes = _audio_to_bytes(audio_obj)
+            import base64
+            audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+    except Exception as e:  # noqa: BLE001
+        print("[WARN] Status TTS failed:", e)
+    return status_text, audio_b64
 
 from supabase import create_client
 
@@ -372,6 +471,8 @@ def get_response():
 @app.post("/api/transcribe")
 def transcribe_audio():
     try:
+        if not elevenlabs:
+            return jsonify({"error": "ELEVENLABS_API_KEY not configured"}), 501
         # Debug info
         print("/api/transcribe content-type:", request.content_type)
         print("/api/transcribe files keys:", list(request.files.keys()))
@@ -412,14 +513,89 @@ def transcribe_audio():
         elif getattr(tr, "text", None):
             text = tr.text.strip()
 
-        print(text)
+        print("[TRANSCRIPT]", text)
         global currentText
         currentText = text
+        # Optional CAD generation chaining (accept several aliases: chain_generate, generate, chain)
+        chain_flag = (
+            request.args.get("chain_generate")
+            or request.args.get("generate")
+            or request.args.get("chain")
+            or request.form.get("chain_generate")
+            or request.form.get("generate")
+            or request.form.get("chain")
+        )
+        do_chain = str(chain_flag).lower() in ("1", "true", "yes")
+        print("[CHAIN] chain flag:", chain_flag, "=>", do_chain)
+        model_id = None
+        scad_code = None
+        status_text = None
+        status_audio_b64 = None
+        # Always do status update first if we are chaining generation
+        if do_chain:
+            print("[CHAIN] Producing status update (Dedalus + TTS) before CAD generation...")
+            status_text, status_audio_b64 = _status_update(text)
+        # If chaining was requested, respect optional async flag to avoid blocking the response
+        if do_chain and text:
+            async_flag = (
+                request.args.get("async")
+                or request.args.get("async_generate")
+                or request.form.get("async")
+                or request.form.get("async_generate")
+            )
+            do_async = str(async_flag).lower() in ("1", "true", "yes")
+            userid = request.args.get("userid") or request.form.get("userid")
+            modelid = request.args.get("modelid") or request.form.get("modelid")
+            if do_async:
+                from threading import Thread
+                job_id = str(uuid4())
+                generation_jobs[job_id] = {
+                    'status': 'pending',
+                    'prompt': text,
+                    'userid': userid,
+                    'modelid': modelid,
+                    'scad_code': None,
+                    'error': None,
+                }
+                def _worker():
+                    generation_jobs[job_id]['status'] = 'running'
+                    try:
+                        mid, code = _generate_cad_model(text, userid=userid, modelid=modelid)
+                        generation_jobs[job_id]['scad_code'] = code
+                        generation_jobs[job_id]['model_id'] = mid
+                        generation_jobs[job_id]['status'] = 'done'
+                    except Exception as e:  # noqa: BLE001
+                        import traceback
+                        generation_jobs[job_id]['error'] = f"{e}"
+                        generation_jobs[job_id]['trace'] = traceback.format_exc()
+                        generation_jobs[job_id]['status'] = 'error'
+                Thread(target=_worker, daemon=True).start()
+                model_id = None
+                scad_code = None
+                # Return quickly with status audio and a job id to poll
+                return jsonify({
+                    "text": text,
+                    "status_text": status_text,
+                    "status_audio_b64": status_audio_b64,
+                    "status_audio_format": "mp3" if status_audio_b64 else None,
+                    "job_id": job_id,
+                    "chained_generation": True,
+                    "async": True
+                })
+            else:
+                print("[CHAIN] Starting CAD generation for transcript prompt (sync)...")
+                model_id, scad_code = _generate_cad_model(text, userid=userid, modelid=modelid)
+                print("[CHAIN] CAD generation complete. model_id=", model_id, "code_length=", len(scad_code) if scad_code else 0)
 
-        # Force JSON content-type
         return jsonify({
             "text": text,
-            "raw": tr.model_dump() if hasattr(tr, "model_dump") else dict(tr)
+            "raw": tr.model_dump() if hasattr(tr, "model_dump") else dict(tr),
+            "model_id": model_id,
+            "scad_code": scad_code,
+            "chained_generation": bool(scad_code),
+            "status_text": status_text,
+            "status_audio_b64": status_audio_b64,
+            "status_audio_format": "mp3" if status_audio_b64 else None
         })
     
 
@@ -435,10 +611,17 @@ def transcribe_audio():
 def health():
     return jsonify({'status': 'ok'})
 
+@app.get('/api/generation/job/<job_id>')
+def get_generation_job(job_id):
+    job = generation_jobs.get(job_id)
+    if not job:
+        return jsonify({'error': 'job not found'}), 404
+    return jsonify(job)
+
 @app.route('/api/claude/generate', methods=['GET'])
 def generate_claude():
     import time
-    p = request.form.get("prompt")
+    p = currentText
     userid = request.form.get("userid")
     modelid = request.form.get("modelid")
     asyncio.run(get_cad(p))
@@ -460,7 +643,7 @@ def generate_claude():
 @app.route('/api/claude/edit', methods=['GET'])
 def edit_claude():
     import time
-    p = request.form.get("prompt")
+    p = currentText
     userid = request.form.get("userid")
     modelid = request.form.get("modelid")
     response = supabase.table("models").select("*").eq("id", modelid).eq("user_id", userid).single().execute()
@@ -474,7 +657,7 @@ def edit_claude():
     with open("outputIterated.scad", "r", encoding="utf-8") as shamalama:
         cont = shamalama.read()
     shit = cont.removeprefix("```openscad").removesuffix("```")
-    response = supabase.table("models").update({"scad_code", shit}).eq("id", modelid).eq("user_id", userid).execute()
+    response = supabase.table("models").update({"scad_code": shit}).eq("id", modelid).eq("user_id", userid).execute()
     return jsonify({
         'success': True,
         'scadcode': shit

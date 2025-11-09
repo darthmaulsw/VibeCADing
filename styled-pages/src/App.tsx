@@ -21,7 +21,7 @@ import type { Model } from './lib/types';
 
 type AppScreen = 'landing' | 'photo-capture' | 'voice-interaction' | 'carousel' | 'editor' | 'ar';
 
-// interface Toast {
+// interface Toast {s
 //   id: string;
 //   message: string;
 //   type: 'success' | 'error' | 'loading';
