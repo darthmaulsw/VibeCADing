@@ -135,12 +135,6 @@ function Model3DPreview({ modelUrl, isActive }: { modelUrl: string; isActive: bo
     setLoadError(false);
     removeCurrentModel();
 
-    const handleProgress = (event: ProgressEvent<EventTarget>) => {
-      if (!event.lengthComputable || event.total === 0) return;
-      const percent = ((event.loaded / event.total) * 100).toFixed(0);
-      console.log(`Loading progress: ${percent}%`);
-    };
-
     const handleSuccess = (object: THREE.Object3D) => {
       if (
         cancelled ||
@@ -167,44 +161,111 @@ function Model3DPreview({ modelUrl, isActive }: { modelUrl: string; isActive: bo
       setIsLoading(false);
     };
 
+    const controller = new AbortController();
+    let currentBlobUrl: string | null = null;
     const manager = new THREE.LoadingManager();
     manager.onError = (url) => {
       console.error('❌ Resource failed to load:', url);
     };
 
-    if (extension === 'glb' || extension === 'gltf') {
-      console.log('Loading GLB/GLTF model from URL:', targetUrl);
-      const loader = new GLTFLoader(manager);
-      loader.setCrossOrigin('anonymous');
-      loader.load(targetUrl, (gltf) => handleSuccess(gltf.scene), handleProgress, handleError);
-    } else if (extension === 'obj') {
-      console.log('Loading OBJ model from URL:', targetUrl);
-      const loader = new OBJLoader(manager);
-      loader.setCrossOrigin('anonymous');
-      loader.load(targetUrl, (obj) => handleSuccess(obj), handleProgress, handleError);
-    } else if (extension === 'stl') {
-      console.log('Loading STL model from URL:', targetUrl);
-      const loader = new STLLoader(manager);
-      loader.load(
-        targetUrl,
-        (geometry) => {
-          const material = new THREE.MeshStandardMaterial({
-            color: 0xb0c4de,
-            metalness: 0.15,
-            roughness: 0.65,
-          });
-          const mesh = new THREE.Mesh(geometry, material);
-          handleSuccess(mesh);
-        },
-        handleProgress,
-        handleError
-      );
-    } else {
-      handleError(new Error(`Unsupported model format: ${extension ?? 'unknown'}`));
-    }
+    const loadFromBlobUrl = (
+      blobUrl: string,
+      onCleanup: () => void
+    ) => {
+      if (extension === 'glb' || extension === 'gltf') {
+        console.log('Loading GLB/GLTF model from blob:', targetUrl);
+        const loader = new GLTFLoader(manager);
+        loader.load(
+          blobUrl,
+          (gltf) => {
+            onCleanup();
+            handleSuccess(gltf.scene);
+          },
+          undefined,
+          (error) => {
+            onCleanup();
+            handleError(error);
+          }
+        );
+      } else if (extension === 'obj') {
+        console.log('Loading OBJ model from blob:', targetUrl);
+        const loader = new OBJLoader(manager);
+        loader.load(
+          blobUrl,
+          (obj) => {
+            onCleanup();
+            handleSuccess(obj);
+          },
+          undefined,
+          (error) => {
+            onCleanup();
+            handleError(error);
+          }
+        );
+      } else if (extension === 'stl') {
+        console.log('Loading STL model from blob:', targetUrl);
+        const loader = new STLLoader(manager);
+        loader.load(
+          blobUrl,
+          (geometry) => {
+            onCleanup();
+            const material = new THREE.MeshStandardMaterial({
+              color: 0xb0c4de,
+              metalness: 0.15,
+              roughness: 0.65,
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+            handleSuccess(mesh);
+          },
+          undefined,
+          (error) => {
+            onCleanup();
+            handleError(error);
+          }
+        );
+      } else {
+        onCleanup();
+        handleError(new Error(`Unsupported model format: ${extension ?? 'unknown'}`));
+      }
+    };
+
+    const fetchAndLoad = async () => {
+      try {
+        console.log('Fetching model data:', targetUrl);
+        const response = await fetch(targetUrl, { signal: controller.signal });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status} (${response.statusText}) while fetching model`);
+        }
+
+        if (cancelled || controller.signal.aborted) return;
+
+        const blob = await response.blob();
+        if (cancelled || controller.signal.aborted) return;
+
+        currentBlobUrl = URL.createObjectURL(blob);
+        const cleanup = () => {
+          if (currentBlobUrl) {
+            URL.revokeObjectURL(currentBlobUrl);
+            currentBlobUrl = null;
+          }
+        };
+
+        loadFromBlobUrl(currentBlobUrl, cleanup);
+      } catch (error) {
+        if (cancelled || controller.signal.aborted) return;
+        handleError(error);
+      }
+    };
+
+    fetchAndLoad();
 
     return () => {
       cancelled = true;
+      controller.abort();
+      if (currentBlobUrl) {
+        URL.revokeObjectURL(currentBlobUrl);
+        currentBlobUrl = null;
+      }
       activeUrlRef.current = null;
     };
   }, [modelUrl, sceneReady]);
