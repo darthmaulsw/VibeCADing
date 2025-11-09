@@ -1,4 +1,4 @@
-```openscad
+
 base_size = 20;
 height = 12;
 center_at_origin = true;
@@ -78,4 +78,3 @@ if (center_at_origin) {
         }
     }
 }
-```

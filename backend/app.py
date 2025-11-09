@@ -82,6 +82,29 @@ def _audio_to_bytes(obj) -> bytes:
         return b"".join(parts)
     raise TypeError(f"Unsupported audio object type: {type(obj)}")
 
+def _strip_markdown_fences(code: str) -> str:
+    """
+    Remove markdown code fences from SCAD code.
+    Handles various formats:
+    - ```openscad ... ```
+    - ```scad ... ```
+    - ``` ... ```
+    - With or without whitespace
+    """
+    code = code.strip()
+    
+    # Remove opening fence: ```openscad, ```scad, or just ```
+    lines = code.split('\n')
+    if lines and lines[0].strip().startswith('```'):
+        lines = lines[1:]
+    
+    # Remove closing fence: ```
+    if lines and lines[-1].strip() == '```':
+        lines = lines[:-1]
+    
+    result = '\n'.join(lines).strip()
+    return result
+
 # CAD generation (new model)
 def _generate_cad_model(prompt: str, userid: str | None = None, modelid: str | None = None):
     if not prompt:
@@ -100,7 +123,8 @@ def _generate_cad_model(prompt: str, userid: str | None = None, modelid: str | N
     if os.path.exists("output.scad"):
         with open("output.scad", "r", encoding="utf-8") as f:
             raw = f.read()
-        scad_code = raw.removeprefix("```openscad").removesuffix("```")
+        # Robust markdown fence removal
+        scad_code = _strip_markdown_fences(raw)
 
     if userid and scad_code:
         try:
@@ -143,7 +167,7 @@ def _iterate_cad_model(prompt: str, userid: str, modelid: str):
         raise RuntimeError("outputIterated.scad not produced by iterate_cad")
     with open("outputIterated.scad", "r", encoding="utf-8") as f:
         raw = f.read()
-    scad_code = raw.removeprefix("```openscad").removesuffix("```")
+    scad_code = _strip_markdown_fences(raw)
 
     # update DB
     supabase.table("models").update({"scad_code": scad_code, "name": prompt}).eq("id", modelid).eq("user_id", userid).execute()
@@ -389,6 +413,96 @@ def get_response():
         return jsonify({"text": text_out, "audio_b64": audio_b64, "format": "mp3"})
     except Exception:
         return jsonify({"error": "TTS failed", "text": text_out}), 500
+
+@app.post("/api/generate-model-summary")
+def generate_model_summary():
+    """
+    POST body JSON:
+      - scad_code (required): The OpenSCAD code that was generated
+      - user_prompt (optional): Original user request for context
+    Returns: { summary: string, audio_b64: string, format: string }
+    
+    Generates a brief natural language summary of the generated model
+    """
+    if not elevenlabs:
+        return jsonify({"error": "ELEVENLABS_API_KEY not configured"}), 500
+    
+    try:
+        data = request.get_json() or {}
+        scad_code = data.get("scad_code", "")
+        user_prompt = data.get("user_prompt", "")
+        
+        if not scad_code:
+            return jsonify({"error": "scad_code is required"}), 400
+        
+        # Build prompt for summary generation
+        prompt = f"""Based on the following OpenSCAD code, generate ONE SHORT sentence (max 15 words) describing what 3D model was created. 
+Be specific about the shape, dimensions if obvious, and any notable features. Do not mention OpenSCAD or technical details.
+Keep it natural and conversational.
+
+{f"User requested: {user_prompt}" if user_prompt else ""}
+
+OpenSCAD code:
+{scad_code[:500]}
+
+Generate a brief description:"""
+        
+        try:
+            client = AsyncDedalus() if os.getenv("DEDALUS_API_KEY") else None
+            if client:
+                runner = DedalusRunner(client)
+                async def _run():
+                    return await runner.run(
+                        input=prompt,
+                        model=["openai/gpt-4o-mini", "gemini-2.5-flash"],
+                        stream=False,
+                    )
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = None
+                if loop and loop.is_running():
+                    new_loop = asyncio.new_event_loop()
+                    try:
+                        asyncio.set_event_loop(new_loop)
+                        result = new_loop.run_until_complete(_run())
+                    finally:
+                        new_loop.close()
+                        asyncio.set_event_loop(loop)
+                elif loop:
+                    result = loop.run_until_complete(_run())
+                else:
+                    result = asyncio.run(_run())
+                summary = getattr(result, "final_output", None) or str(result)
+                # Clean up the summary - remove quotes if wrapped
+                summary = summary.strip().strip('"').strip("'")
+            else:
+                summary = "Your 3D model has been generated successfully."
+        except Exception as e:
+            print(f"[WARN] Summary generation failed: {e}")
+            summary = "Your 3D model has been generated successfully."
+        
+        # Generate TTS audio for the summary
+        try:
+            audio = elevenlabs.text_to_speech.convert(
+                text=summary,
+                voice_id="IKne3meq5aSn9XLyUdCD",
+                model_id="eleven_multilingual_v2",
+                output_format="mp3_44100_128",
+            )
+            audio_bytes = _audio_to_bytes(audio)
+            import base64
+            audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+            return jsonify({"summary": summary, "audio_b64": audio_b64, "format": "mp3"})
+        except Exception as tts_err:
+            print(f"[WARN] TTS failed for summary: {tts_err}")
+            return jsonify({"summary": summary, "audio_b64": None, "format": None})
+            
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] generate-model-summary exception: {e}")
+        print(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
 
 # >>> ITERATION: Dedicated endpoint
 @app.post("/api/iterate")

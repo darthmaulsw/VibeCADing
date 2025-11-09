@@ -103,9 +103,65 @@ export function VoiceBot({
         if (onModelReady) {
           onModelReady();
         }
+        
+        // Generate and play summary after model is loaded
+        generateAndPlaySummary(scad);
       }
     } catch (e) {
       console.warn('[VoiceBot] SCAD conversion exception:', e);
+    }
+  };
+
+  // Generate model summary and play audio
+  const generateAndPlaySummary = async (scadCode: string) => {
+    try {
+      console.log('[VoiceBot] Generating model summary...');
+      const resp = await fetch('/api/generate-model-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scad_code: scadCode }),
+      });
+
+      if (!resp.ok) {
+        console.warn('[VoiceBot] Summary generation failed:', resp.status);
+        return;
+      }
+
+      const data: { summary?: string; audio_b64?: string; format?: string } = await resp.json();
+      console.log('[VoiceBot] Summary:', data.summary);
+
+      // Play summary audio
+      const b64 = data.audio_b64;
+      const fmt = (data.format || 'mp3').toLowerCase();
+      if (b64) {
+        try {
+          const clean = b64.replace(/\s/g, '');
+          const bin = atob(clean);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          const mime = fmt === 'mp3' ? 'audio/mpeg' : `audio/${fmt}`;
+          const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+
+          // Stop any currently playing audio
+          try {
+            playingRef.current?.pause();
+            playingRef.current?.removeAttribute('src');
+          } catch (pauseErr) {
+            console.warn('[VoiceBot] Failed to stop previous audio:', pauseErr);
+          }
+
+          const a = new Audio(url);
+          playingRef.current = a;
+          a.onended = () => URL.revokeObjectURL(url);
+          a.play().catch((playErr) => {
+            console.warn('[VoiceBot] Summary audio playback blocked or failed:', playErr);
+          });
+        } catch (e) {
+          console.warn('[VoiceBot] Failed to decode or play summary audio', e);
+        }
+      }
+    } catch (e) {
+      console.warn('[VoiceBot] Summary generation exception:', e);
     }
   };
 

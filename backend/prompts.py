@@ -38,6 +38,8 @@ def mkprompt(p: str) -> str:
         FINAL NOTICE: MAKE SURE TO REMOVE THE FIRST LINE IF IT CONTAINS ANYTHING LIKE "```openscad" OR "```"
         AND THE LAST LINE IF IT CONTAINS "```"
 
+        MAKE SURE NOT TO WRAP THE FINAL OPENSCAD CODE IN ANY MARKDOWN OR CODE BLOCKS. KEEP IT PLAIN TEXT.
+
     """
 
 def editprompt(p: str, fix: str) -> str:

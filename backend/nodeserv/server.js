@@ -58,23 +58,27 @@ app.post("/convert-scad", async (req, res) => {
     // Preprocess SCAD: Strip markdown code fences if present
     let processedScad = scad.trim();
     
+    // Split into lines for robust fence detection
+    let lines = processedScad.split('\n');
+    
     // Remove opening code fence (```openscad, ```scad, or just ```)
-    if (processedScad.startsWith('```')) {
-      const firstNewline = processedScad.indexOf('\n');
-      if (firstNewline !== -1) {
-        processedScad = processedScad.substring(firstNewline + 1);
-        console.log('[convert] Stripped opening markdown fence');
-      }
+    // Check first line - might have whitespace or different fence formats
+    if (lines.length > 0 && lines[0].trim().startsWith('```')) {
+      lines.shift(); // Remove first line
+      console.log('[convert] Stripped opening markdown fence');
     }
     
     // Remove closing code fence (```)
-    if (processedScad.endsWith('```')) {
-      const lastFenceIndex = processedScad.lastIndexOf('```');
-      processedScad = processedScad.substring(0, lastFenceIndex);
+    // Check last line - might have whitespace
+    if (lines.length > 0 && lines[lines.length - 1].trim() === '```') {
+      lines.pop(); // Remove last line
       console.log('[convert] Stripped closing markdown fence');
     }
     
-    processedScad = processedScad.trim();
+    // Rejoin and trim
+    processedScad = lines.join('\n').trim();
+    
+    console.log(`[convert] After fence removal (first 300 chars):\n${processedScad.substring(0, 300)}\n...`);
     
     // Fix 2: Look for variables used in assembly but defined in modules
     // Common pattern: translate([..., variable_name/2, ...]) where variable_name is in a module
