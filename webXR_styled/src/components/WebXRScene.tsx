@@ -862,10 +862,11 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         );
         colorPickerTextureRef.current.needsUpdate = true;
         
-        // Handle joystick click to confirm color selection and close
-        const clickNow = isThumbstickClick(gp);
-        if (clickNow && !prevMenuStickClickRef.current) {
-          // Color is already applied via handleColorSelect above
+        // Handle joystick click to close
+        const currentStickClick = isThumbstickClick(gp);
+        const wasStickClickPressed = prevMenuStickClickRef.current;
+        
+        if (currentStickClick && !wasStickClickPressed) {
           // Close color picker
           setColorPickerOpen(false);
           if (colorPickerPlaneRef.current) {
@@ -873,11 +874,8 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           }
         }
         
-        // Update edge detector
-        prevMenuStickClickRef.current = clickNow;
-      } else {
-        // Color picker closed → keep edge detector in sync
-        prevMenuStickClickRef.current = isThumbstickClick(leftGamepadRef.current ?? undefined);
+        // Update previous stick click state for next frame
+        prevMenuStickClickRef.current = currentStickClick;
       }
       
       // Update 3D color picker position to follow controller
