@@ -140,7 +140,8 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   const menuCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const menuTextureRef = useRef<THREE.CanvasTexture | null>(null);
   const menuSelectedIndexRef = useRef<number | null>(null);
-  const prevMenuStickClickRef = useRef<boolean>(false);
+  const prevStickClickRef = useRef<boolean>(false);
+  const prevYPressedRef = useRef<boolean>(false);
   
   // --- 3D Color Picker in AR ---
   const colorPickerPlaneRef = useRef<THREE.Mesh | null>(null);
@@ -375,9 +376,6 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   const isGrabPressed = (gp?: Gamepad) => !!(gp && (gp.buttons?.[0]?.pressed || gp.buttons?.[1]?.pressed));
   // Right B button (xr-standard puts X/A on 4, Y/B on 5). We only treat B on right.
   const isBPressedRight = (gp?: Gamepad) => !!(gp && gp.buttons?.[5]?.pressed);
-  // Left Y button (button 5 on left controller)
-  const isYPressedLeft = (gp?: Gamepad) => !!(gp && gp.buttons?.[5]?.pressed);
-  
   /** Safely read whether any of these button indices are pressed */
   function anyPressed(gp: Gamepad | null | undefined, idx: number[]): boolean {
     if (!gp || !gp.buttons) return false;
@@ -403,6 +401,43 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
       const y = gp.axes[3] ?? gp.axes[1] ?? 0;
       return { x, y };
     }
+  }
+
+  /** Read left stick specifically */
+  function readLeftStick(gp: Gamepad | null | undefined): { x: number; y: number } {
+    return readStick(gp, 'left');
+  }
+
+  /** Convert stick input to menu index (returns null if in deadzone) */
+  function stickToMenuIndex(lx: number, ly: number, itemCount: number, deadzone: number): number | null {
+    const mag = Math.hypot(lx, ly);
+    if (mag <= deadzone) return null;
+    
+    // Angle in radians: right = 0, up = -PI/2, CCW positive
+    const angle = Math.atan2(-ly, lx);
+    
+    // Menu starts at top (-PI/2)
+    const menuStartAngle = -Math.PI / 2;
+    
+    // Shift so 0 is top; wrap to [0, 2PI)
+    let a = angle - menuStartAngle;
+    a = (a % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+    
+    // Slice the circle into N equal wedges
+    const segmentAngle = (2 * Math.PI) / itemCount;
+    let selectedIndex = Math.floor(a / segmentAngle);
+    
+    // Clamp to valid range
+    if (selectedIndex >= itemCount) selectedIndex = itemCount - 1;
+    if (selectedIndex < 0) selectedIndex = 0;
+    
+    return selectedIndex;
+  }
+
+  /** Y button on left controller (buttons 4 or 5) */
+  function isYPressedLeft(gp?: Gamepad | null) {
+    // On many Quest profiles Y is button index 4 or 5; include both
+    return anyPressed(gp, [4, 5]);
   }
 
   // Laser setup/teardown
@@ -677,115 +712,82 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         }
       });
 
-      // Handle left Y button press to toggle radial menu
-      if (leftY && !prevLeftY && leftCtrlRef.current && cameraRef.current) {
-        // Toggle menu
-        const newMenuOpen = !menuOpenRef.current;
-        menuOpenRef.current = newMenuOpen;
-        
-        if (newMenuOpen) {
-          // Position 3D menu in front of controller
-          if (menuPlaneRef.current && leftCtrlRef.current && menuCanvasRef.current && menuTextureRef.current) {
-            const ctrlPos = worldPos(leftCtrlRef.current);
-            const ctrlDir = worldDir(leftCtrlRef.current);
-            const menuDistance = 0.4; // 40cm in front of controller
-            
-            menuPlaneRef.current.position.copy(ctrlPos);
-            menuPlaneRef.current.position.add(ctrlDir.multiplyScalar(menuDistance));
-            
-            // Make menu face camera
-            menuPlaneRef.current.lookAt(cameraRef.current.position);
-            menuPlaneRef.current.visible = true;
-            
-            // Set default selection to first item when opening menu
-            menuSelectedIndexRef.current = 0;
-            
-            // Render menu to canvas and update texture
-            renderMenuToCanvas(menuCanvasRef.current, true, 0);
-            menuTextureRef.current.needsUpdate = true;
-          }
-          
-          // Project controller position to screen coordinates (for color picker positioning)
-          const ctrlPos = worldPos(leftCtrlRef.current);
-          const vector = new THREE.Vector3();
-          vector.copy(ctrlPos);
-          vector.project(cameraRef.current);
-          
-          const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
-          const y = (-(vector.y * 0.5) + 0.5) * window.innerHeight;
-          menuPosRef.current = { x, y };
-        } else {
-          // Hide 3D menu
+      // Handle Y button to toggle menu
+      if (leftGamepadRef.current) {
+        const yNow = isYPressedLeft(leftGamepadRef.current);
+        if (yNow && !prevYPressedRef.current) {
+          menuOpenRef.current = !menuOpenRef.current;
           if (menuPlaneRef.current) {
-            menuPlaneRef.current.visible = false;
+            menuPlaneRef.current.visible = menuOpenRef.current;
           }
-          // Close color picker if menu closes
-          setColorPickerOpen(false);
+          if (menuOpenRef.current) {
+            // Position menu in front of controller
+            if (menuPlaneRef.current && leftCtrlRef.current && cameraRef.current) {
+              const ctrlPos = worldPos(leftCtrlRef.current);
+              const ctrlDir = worldDir(leftCtrlRef.current);
+              const menuDistance = 0.4;
+              
+              menuPlaneRef.current.position.copy(ctrlPos);
+              menuPlaneRef.current.position.add(ctrlDir.multiplyScalar(menuDistance));
+              menuPlaneRef.current.lookAt(cameraRef.current.position);
+            }
+            
+            menuSelectedIndexRef.current = 0; // default to top wedge
+            if (menuCanvasRef.current && menuTextureRef.current) {
+              renderMenuToCanvas(menuCanvasRef.current, true, 0);
+              menuTextureRef.current.needsUpdate = true;
+            }
+            
+            // Project controller position to screen coordinates (for color picker positioning)
+            if (leftCtrlRef.current && cameraRef.current) {
+              const ctrlPos = worldPos(leftCtrlRef.current);
+              const vector = new THREE.Vector3();
+              vector.copy(ctrlPos);
+              vector.project(cameraRef.current);
+              
+              const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+              const y = (-(vector.y * 0.5) + 0.5) * window.innerHeight;
+              menuPosRef.current = { x, y };
+            }
+          } else {
+            // Close color picker if menu closes
+            setColorPickerOpen(false);
+          }
         }
+        prevYPressedRef.current = yNow;
       }
-      
-      // Handle menu navigation with left joystick
-      if (menuOpenRef.current && leftGamepadRef.current && menuCanvasRef.current && menuTextureRef.current) {
+
+      // Update radial menu
+      function updateRadialMenu() {
+        if (!menuOpenRef.current) return;
         const gp = leftGamepadRef.current;
-        const items = MENU_ITEMS;
+        if (!gp || !menuCanvasRef.current || !menuTextureRef.current) return;
         
-        // Get joystick input using readStick helper
-        const { x: stickX, y: stickY } = readStick(leftGamepadRef.current, 'left');
+        const { x: lx, y: ly } = readLeftStick(gp);
         
-        const stickDeadzone = 0.1; // Lower deadzone for better sensitivity
-        
-        // Calculate angle from joystick input
-        if (Math.abs(stickX) > stickDeadzone || Math.abs(stickY) > stickDeadzone) {
-          // Calculate angle from joystick
-          // Joystick coordinates: right=+X, up=-Y (inverted Y in gamepad API)
-          // We need to account for the coordinate system difference
-          const angle = Math.atan2(stickX, -stickY); // Standard atan2
-          // Rotate by 180 degrees to fix the inversion
-          const rotatedAngle = (angle + Math.PI) % (Math.PI * 2);
-          const normalizedAngle = (rotatedAngle + Math.PI * 2) % (Math.PI * 2);
-          
-          // Convert angle to menu item index (menu starts at -90 degrees / top)
-          // Menu items are arranged clockwise starting from top (index 0 = Select at top)
-          const menuStartAngle = -Math.PI / 2; // Top position
-          let itemAngle = (normalizedAngle - menuStartAngle + Math.PI * 2) % (Math.PI * 2);
-          const segmentAngle = (2 * Math.PI) / items.length;
-          let selectedIndex = Math.floor(itemAngle / segmentAngle);
-          
-          // Clamp to valid range
-          if (selectedIndex >= items.length) selectedIndex = items.length - 1;
-          if (selectedIndex < 0) selectedIndex = 0;
-          
-          if (menuSelectedIndexRef.current !== selectedIndex) {
-            menuSelectedIndexRef.current = selectedIndex;
-            renderMenuToCanvas(menuCanvasRef.current, true, selectedIndex);
-            menuTextureRef.current.needsUpdate = true;
-          }
-        } else {
-          // If joystick is in deadzone but we have a selection, keep it visible
-          if (menuSelectedIndexRef.current !== null && menuSelectedIndexRef.current >= 0) {
-            // Keep rendering the menu with current selection
-            renderMenuToCanvas(menuCanvasRef.current, true, menuSelectedIndexRef.current);
-            menuTextureRef.current.needsUpdate = true;
-          }
-        }
-        
-        // Always update menu texture to ensure it's visible (even when joystick is in deadzone)
-        if (menuSelectedIndexRef.current !== null && menuSelectedIndexRef.current >= 0) {
+        // 1) Compute selection
+        const idx = stickToMenuIndex(lx, ly, MENU_ITEMS.length, 0.15);
+        if (idx !== null && idx !== menuSelectedIndexRef.current) {
+          menuSelectedIndexRef.current = idx;
+          // re-render your wheel to highlight idx
+          renderMenuToCanvas(menuCanvasRef.current, true, idx);
+          menuTextureRef.current.needsUpdate = true;
+        } else if (idx === null && menuSelectedIndexRef.current != null) {
+          // keep showing current highlight (optional re-render)
           renderMenuToCanvas(menuCanvasRef.current, true, menuSelectedIndexRef.current);
           menuTextureRef.current.needsUpdate = true;
         }
         
-        // Handle joystick click to select
-        const currentStickClick = isThumbstickClick(gp);
-        
-        if (currentStickClick && !prevMenuStickClickRef.current && menuSelectedIndexRef.current != null && menuSelectedIndexRef.current >= 0) {
-          const selectedItem = items[menuSelectedIndexRef.current];
+        // 2) Confirm on stick click (edge)
+        const clickNow = isThumbstickClick(gp);
+        if (clickNow && !prevStickClickRef.current && menuSelectedIndexRef.current != null) {
+          const choice = MENU_ITEMS[menuSelectedIndexRef.current];
           
-          // Close menu plane
+          // handle selection (open color picker, enable rotate, etc.)
           menuOpenRef.current = false;
           if (menuPlaneRef.current) menuPlaneRef.current.visible = false;
           
-          if (selectedItem === 'Color') {
+          if (choice === 'Color') {
             // Show color picker plane
             if (colorPickerPlaneRef.current && leftCtrlRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current && cameraRef.current) {
               const ctrlPos = worldPos(leftCtrlRef.current);
@@ -811,19 +813,33 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
             }
             setColorPickerOpen(true);
             setColorPickerPos(menuPosRef.current);
-          } else if (selectedItem === 'Rotate') {
+          } else if (choice === 'Rotate') {
             // Optional: prime rotate overlay or state if you want
             setColorPickerOpen(false);
-          } else if (selectedItem === 'Scale') {
+          } else if (choice === 'Scale') {
             setColorPickerOpen(false);
           }
         }
+        prevStickClickRef.current = clickNow;
+      }
+      
+      // Call updateRadialMenu when menu is open
+      if (menuOpenRef.current) {
+        // Position menu plane in front of controller
+        if (menuPlaneRef.current && leftCtrlRef.current && cameraRef.current) {
+          const ctrlPos = worldPos(leftCtrlRef.current);
+          const ctrlDir = worldDir(leftCtrlRef.current);
+          const menuDistance = 0.4;
+          
+          menuPlaneRef.current.position.copy(ctrlPos);
+          menuPlaneRef.current.position.add(ctrlDir.multiplyScalar(menuDistance));
+          menuPlaneRef.current.lookAt(cameraRef.current.position);
+        }
         
-        // Update edge detector once per frame
-        prevMenuStickClickRef.current = currentStickClick;
+        updateRadialMenu();
       } else {
-        // Menu closed
-        prevMenuStickClickRef.current = isThumbstickClick(leftGamepadRef.current ?? undefined);
+        // Menu closed - keep edge detector in sync
+        prevStickClickRef.current = isThumbstickClick(leftGamepadRef.current ?? undefined);
       }
       
       // Handle color picker interaction
@@ -865,19 +881,15 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         colorPickerTextureRef.current.needsUpdate = true;
         
         // Handle joystick click to close
-        const currentStickClick = isThumbstickClick(gp);
-        const wasStickClickPressed = prevMenuStickClickRef.current;
-        
-        if (currentStickClick && !wasStickClickPressed) {
+        const clickNow = isThumbstickClick(gp);
+        if (clickNow && !prevStickClickRef.current) {
           // Close color picker
           setColorPickerOpen(false);
           if (colorPickerPlaneRef.current) {
             colorPickerPlaneRef.current.visible = false;
           }
         }
-        
-        // Update previous stick click state for next frame
-        prevMenuStickClickRef.current = currentStickClick;
+        prevStickClickRef.current = clickNow;
       }
       
       // Update 3D color picker position to follow controller
