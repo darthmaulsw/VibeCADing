@@ -1,14 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+colorPickerOpenRef import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { ScaleOverlay } from '../../three/overlays/ScaleOverlay';
-import { RotateOverlay } from '../../three/overlays/RotateOverlay';
-import { ColorPicker } from '../ui/ColorPicker';
+import { loadModel, type LoadedModel } from './utils/modelLoader';
+import { ScaleOverlay } from '../three/overlays/ScaleOverlay';
+import { RotateOverlay } from '../three/overlays/RotateOverlay';
 
 interface WebXRSceneProps {
   xrSession?: XRSession | null;
-  modelUrl?: string; // GLB URL to load
 }
 
 /* =========================
@@ -23,7 +22,7 @@ const MIN_HAND_DISTANCE = 0.05; // 5 cm floor
 const ARM_DELTA = 0.05;         // arming threshold
 const DEADZONE_METERS = 0.015;  // scale jitter deadzone
 const ABS_MIN_SIZE = 0.10;      // min object size (largest dim), meters
-const ABS_MAX_SIZE = 25.00;      // max object size (largest dim), meters
+const ABS_MAX_SIZE = 5.00;      // max object size (largest dim), meters
 
 // Right-stick rotation
 const STICK_DEADZONE = 0.20;    // ignore tiny stick noise (0..1)
@@ -79,12 +78,13 @@ function centerAndFitToMax(child: THREE.Object3D, targetMaxSizeMeters: number): 
 /* =========================
    Scene Component
    ========================= */
-export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) => {
+export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controllerModelFactoryRef = useRef<XRControllerModelFactory | null>(null);
+  const loadedModelsRef = useRef<LoadedModel[]>([]);
 
   // The node we scale/rotate/drag (ALWAYS the fitted container)
   const objectRef = useRef<THREE.Object3D | null>(null);
@@ -129,10 +129,8 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
   const isRotatingRef = useRef(false);
 
   // --- UI State ---
-  const [colorPickerOpen, setColorPickerOpen] = useState(false);
-  const [colorPickerPos, setColorPickerPos] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  const colorPickerOpenRef = useRef(false);
   const menuOpenRef = useRef(false);
-  const menuPosRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   
   // --- 3D Menu in AR ---
   const menuPlaneRef = useRef<THREE.Mesh | null>(null);
@@ -147,6 +145,17 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
   const colorPickerCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const colorPickerTextureRef = useRef<THREE.CanvasTexture | null>(null);
   const colorPickerStateRef = useRef({ hue: 200, saturation: 80, lightness: 60, rotation: 0 });
+
+  const openColorPicker = () => {
+    colorPickerOpenRef.current = true;
+  };
+
+  const closeColorPicker = () => {
+    colorPickerOpenRef.current = false;
+    if (colorPickerPlaneRef.current) {
+      colorPickerPlaneRef.current.visible = false;
+    }
+  };
 
   // Helpers
   const setUniformScale = (obj: THREE.Object3D, s: number) => {
@@ -383,9 +392,9 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
   }
 
   /** xr-standard mapping on Quest: thumbstick click is typically index 3 */
-  function isThumbstickClick(gp: Gamepad | null | undefined) {
-    if (!gp || !gp.buttons) return false;
-    return !!(gp.buttons[3]?.pressed || gp.buttons[11]?.pressed || gp.buttons[9]?.pressed);
+  function isThumbstickClick(gp?: Gamepad | null) {
+    // 3 is standard; include a couple fallbacks
+    return !!(gp?.buttons?.[3]?.pressed || gp?.buttons?.[11]?.pressed || gp?.buttons?.[9]?.pressed);
   }
 
   /** Stick axes with fallbacks (Quest: left [0,1], right [2,3]) */
@@ -402,41 +411,32 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
     }
   }
 
-  /** Read left stick specifically using legacy detection */
-  function readLeftStick(gp: Gamepad | null | undefined): { x: number; y: number } {
-    return getLeftStickLegacy(gp);
-  }
-
-  /** Prefer axes [2,3], fall back to [0,1] if primary pair is centered. */
-  function getLeftStickLegacy(gp: Gamepad | null | undefined): { x: number; y: number } {
-    if (!gp || !gp.axes) return { x: 0, y: 0 };
-    const primaryX = gp.axes[2] ?? 0;
-    const primaryY = gp.axes[3] ?? 0;
-    const primaryMag = Math.hypot(primaryX, primaryY);
-    if (primaryMag > 0.05) {
-      return { x: primaryX, y: primaryY };
+  /** Prefer [2,3], fallback to [0,1]; small DZ only for fallback check */
+  function getLeftStickLegacy(gp: Gamepad | null | undefined) {
+    let x = 0, y = 0;
+    if (gp?.axes && gp.axes.length > 3) {
+      x = gp.axes[2] ?? 0;
+      y = gp.axes[3] ?? 0;
     }
-    const fallbackX = gp.axes[0] ?? 0;
-    const fallbackY = gp.axes[1] ?? 0;
-    return { x: fallbackX, y: fallbackY };
+    // If that looks centered, try [0,1]
+    if (Math.abs(x) < 0.05 && Math.abs(y) < 0.05 && gp?.axes && gp.axes.length > 1) {
+      x = gp.axes[0] ?? 0;
+      y = gp.axes[1] ?? 0;
+    }
+    return { x, y };
   }
 
-  /** Convert stick input to menu index */
-  function stickToMenuIndex(lx: number, ly: number, itemCount: number, startAtTop = true): number {
-    // Angle in radians: right = 0, up = -PI/2, CCW positive
+  /** Convert stick to menu index; top wedge is index 0 */
+  function stickToMenuIndex(lx: number, ly: number, itemCount: number, startAtTop = true) {
+    // right=0, up=-PI/2
     const angle = Math.atan2(-ly, lx);
-    
-    // Menu starts at top (-PI/2) by default, optionally rotate
-    const menuStartAngle = startAtTop ? -Math.PI / 2 : 0;
-    
-    // Shift so 0 is top; wrap to [0, 2PI)
-    let a = angle - menuStartAngle;
-    a = (a % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
-    
-    // Slice the circle into N equal wedges
-    const segmentAngle = (2 * Math.PI) / itemCount;
-    const selectedIndex = Math.floor(a / segmentAngle);
-    return Math.max(0, Math.min(itemCount - 1, selectedIndex));
+    const offset = startAtTop ? -Math.PI / 2 : 0;
+    let a = angle - offset;
+    a = (a % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+    const seg = (2 * Math.PI) / itemCount;
+    let idx = Math.floor(a / seg);
+    if (idx >= itemCount) idx = itemCount - 1;
+    return idx;
   }
 
   /** Y button on left controller (buttons 4 or 5) */
@@ -583,49 +583,19 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
     /* ---------- Load model (meters) ---------- */
     const loadModelMeters = async () => {
       try {
-        let modelToLoad: THREE.Object3D;
-        
-        if (modelUrl) {
-          // Load GLB from provided URL (from PhotoCapture or database)
-          console.log('Loading GLB from URL:', modelUrl);
-          const loader = new GLTFLoader();
-          const gltf = await new Promise<any>((resolve, reject) => {
-            loader.load(
-              modelUrl,
-              resolve,
-              undefined,
-              reject
-            );
-          });
-          modelToLoad = gltf.scene;
-          console.log('✅ GLB loaded successfully for AR');
-        } else {
-          // Fallback: try to load from global URL or use cube
-          const globalUrl = (window as any).VIBECAD_LAST_GLB_URL;
-          if (globalUrl) {
-            console.log('Loading GLB from global URL:', globalUrl);
-            const loader = new GLTFLoader();
-            const gltf = await new Promise<any>((resolve, reject) => {
-              loader.load(
-                globalUrl,
-                resolve,
-                undefined,
-                reject
-              );
-            });
-            modelToLoad = gltf.scene;
-            console.log('✅ GLB loaded from global URL');
-          } else {
-            throw new Error('No model URL provided');
-          }
-        }
+        const url = new URL('../assets/objects/generated-model.stl', import.meta.url);
+        const loaded = await loadModel(url.href);
 
-        const container = centerAndFitToMax(modelToLoad, START_MAX_SIZE_M);
+        // STL likely in mm → convert to meters
+        convertUnitsToMeters(loaded.model, 'millimeters');
+
+        const container = centerAndFitToMax(loaded.model, START_MAX_SIZE_M);
         container.position.set(0, 1.6, -1.5);
         container.traverse((c: any) => (c.visible = true));
         scene.add(container);
 
         objectRef.current = container;
+        loadedModelsRef.current.push(loaded);
 
         const bbox = new THREE.Box3().setFromObject(container);
         const size = bbox.getSize(new THREE.Vector3());
@@ -773,76 +743,75 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
               menuTextureRef.current.needsUpdate = true;
             }
             
-            // Project controller position to screen coordinates (for color picker positioning)
-            if (leftCtrlRef.current && cameraRef.current) {
-              const ctrlPos = worldPos(leftCtrlRef.current);
-              const vector = new THREE.Vector3();
-              vector.copy(ctrlPos);
-              vector.project(cameraRef.current);
-              
-              const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
-              const y = (-(vector.y * 0.5) + 0.5) * window.innerHeight;
-              menuPosRef.current = { x, y };
-            }
           } else {
-      // Close color picker if menu closes
-      setColorPickerOpen(false);
-      if (colorPickerPlaneRef.current) {
-        colorPickerPlaneRef.current.visible = false;
-      }
+            // Close color picker if menu closes
+            closeColorPicker();
           }
         }
         prevYPressedRef.current = yNow;
       }
 
-      // Update radial menu
+      // Update radial menu frame with adaptive deadzone and hysteresis
       function updateRadialMenuFrame() {
-        if (!menuOpenRef.current) return;
-        const gp = leftGamepadRef.current;
-        if (!gp || !menuCanvasRef.current || !menuTextureRef.current) return;
+        if (!menuOpenRef.current || !leftGamepadRef.current || !menuCanvasRef.current || !menuTextureRef.current) return;
 
+        const gp = leftGamepadRef.current;
         const { x: lx, y: ly } = getLeftStickLegacy(gp);
         const mag = Math.hypot(lx, ly);
-        const baseDeadzone = mag > 0.6 ? 0.04 : 0.08;
-        const switchThreshold = baseDeadzone + 0.03;
 
-        // console.log('[AR][Menu] left stick', lx.toFixed(2), ly.toFixed(2), 'mag', mag.toFixed(2));
+        // Uncomment to verify axes values when you move the stick
+        // console.log('L AXES:', (gp.axes||[]).map(v => v.toFixed(2)));
 
-        if (mag > baseDeadzone) {
-          const prevIndex = menuSelectedIndexRef.current ?? 0;
-          if (menuSelectedIndexRef.current == null || mag > switchThreshold) {
+        // Adaptive deadzone
+        let dz = 0.08;
+        if (mag > 0.6) dz = 0.04;
+
+        const currentIndex = menuSelectedIndexRef.current;
+        const armed = mag > dz;
+        const hysteresis = dz + 0.03;
+
+        // Only change selection when clearly outside hysteresis
+        if (armed || (currentIndex == null && mag > dz)) {
+          if (mag > hysteresis) {
             const idx = stickToMenuIndex(lx, ly, MENU_ITEMS.length, true);
-            if (idx !== prevIndex) {
+            if (idx !== currentIndex) {
               menuSelectedIndexRef.current = idx;
               renderMenuToCanvas(menuCanvasRef.current, true, idx);
               menuTextureRef.current.needsUpdate = true;
             }
           }
+        } else {
+          // keep current highlight, optionally re-render
+          if (currentIndex != null) {
+            renderMenuToCanvas(menuCanvasRef.current, true, currentIndex);
+            menuTextureRef.current.needsUpdate = true;
+          }
         }
 
-        // 2) Confirm on stick click (edge)
+        // Confirm on stick click (edge)
         const clickNow = isThumbstickClick(gp);
         if (clickNow && !prevStickClickRef.current && menuSelectedIndexRef.current != null) {
           const choice = MENU_ITEMS[menuSelectedIndexRef.current];
 
-          // handle selection (open color picker, enable rotate, etc.)
+          // Close menu plane
           menuOpenRef.current = false;
           if (menuPlaneRef.current) menuPlaneRef.current.visible = false;
 
+          // Handle selection
           if (choice === 'Color') {
             // Show color picker plane
             if (colorPickerPlaneRef.current && leftCtrlRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current && cameraRef.current) {
               const ctrlPos = worldPos(leftCtrlRef.current);
               const ctrlDir = worldDir(leftCtrlRef.current);
               const pickerDistance = 0.4;
-
+              
               colorPickerPlaneRef.current.position.copy(ctrlPos);
               colorPickerPlaneRef.current.position.add(ctrlDir.multiplyScalar(pickerDistance));
               colorPickerPlaneRef.current.lookAt(cameraRef.current.position);
               colorPickerPlaneRef.current.visible = true;
-
+              
               colorPickerStateRef.current = { hue: 200, saturation: 80, lightness: 60, rotation: 0 };
-
+              
               renderColorPickerToCanvas(
                 colorPickerCanvasRef.current,
                 true,
@@ -853,17 +822,18 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
               );
               colorPickerTextureRef.current.needsUpdate = true;
             }
-            setColorPickerOpen(true);
-            setColorPickerPos(menuPosRef.current);
-          } else if (choice === 'Rotate' || choice === 'Scale') {
-            setColorPickerOpen(false);
-            if (colorPickerPlaneRef.current) colorPickerPlaneRef.current.visible = false;
+            openColorPicker();
+          } else if (choice === 'Rotate') {
+            // Optional: prime rotate overlay or state if you want
+            closeColorPicker();
+          } else if (choice === 'Scale') {
+            closeColorPicker();
           }
         }
         prevStickClickRef.current = clickNow;
       }
       
-      // Call updateRadialMenu when menu is open
+      // Call updateRadialMenuFrame when menu is open
       if (menuOpenRef.current) {
         // Position menu plane in front of controller
         if (menuPlaneRef.current && leftCtrlRef.current && cameraRef.current) {
@@ -883,21 +853,25 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
       }
       
       // Handle color picker interaction
-      if (colorPickerOpen && leftGamepadRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current) {
+      if (colorPickerOpenRef.current && leftGamepadRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current) {
         const gp = leftGamepadRef.current;
         const { x: lx, y: ly } = getLeftStickLegacy(gp);
         const mag = Math.hypot(lx, ly);
+
+        // Adaptive deadzone similar to radial menu
         let dz = 0.08;
         if (mag > 0.6) dz = 0.04;
         const hysteresis = dz + 0.03;
 
         if (mag > hysteresis) {
+          // Angle in radians: right = 0, up = -PI/2
           const angle = Math.atan2(-ly, lx);
-          const offset = -Math.PI / 2;
+          const offset = -Math.PI / 2; // align top
           let normalizedAngle = angle - offset;
           normalizedAngle = (normalizedAngle % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
           const newHue = Math.floor((normalizedAngle / (Math.PI * 2)) * 360);
 
+          // Apply hysteresis to hue changes
           const currentHue = colorPickerStateRef.current.hue;
           const hueDiff = Math.min(
             Math.abs(currentHue - newHue),
@@ -908,13 +882,16 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
           if (hueDiff > 3) {
             colorPickerStateRef.current.hue = newHue;
 
+            // Update color immediately
             const color = `hsl(${colorPickerStateRef.current.hue}, ${colorPickerStateRef.current.saturation}%, ${colorPickerStateRef.current.lightness}%)`;
             handleColorSelect(color);
           }
         }
-
+ 
+        // Update rotation for animation
         colorPickerStateRef.current.rotation = (colorPickerStateRef.current.rotation + 0.4) % 360;
-
+        
+        // Continuously update color picker texture
         renderColorPickerToCanvas(
           colorPickerCanvasRef.current,
           true,
@@ -924,19 +901,17 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
           colorPickerStateRef.current.rotation
         );
         colorPickerTextureRef.current.needsUpdate = true;
-
+        
+        // Handle joystick click to close
         const clickNow = isThumbstickClick(gp);
         if (clickNow && !prevStickClickRef.current) {
-          setColorPickerOpen(false);
-          if (colorPickerPlaneRef.current) {
-            colorPickerPlaneRef.current.visible = false;
-          }
+          closeColorPicker();
         }
         prevStickClickRef.current = clickNow;
       }
       
       // Update 3D color picker position to follow controller
-      if (colorPickerOpen && colorPickerPlaneRef.current && leftCtrlRef.current && cameraRef.current) {
+      if (colorPickerOpenRef.current && colorPickerPlaneRef.current && leftCtrlRef.current && cameraRef.current) {
         const ctrlPos = worldPos(leftCtrlRef.current);
         const ctrlDir = worldDir(leftCtrlRef.current);
         const pickerDistance = 0.4;
@@ -1205,18 +1180,17 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
         colorPickerTextureRef.current = null;
       }
 
-      // Clean up loaded model
-      if (objectRef.current) {
-        scene.remove(objectRef.current);
-        objectRef.current.traverse((child) => {
+      loadedModelsRef.current.forEach((lm) => {
+        scene.remove(lm.model);
+        lm.model.traverse((child) => {
           if (child instanceof THREE.Mesh) {
             child.geometry.dispose();
             if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
             else child.material.dispose();
           }
         });
-        objectRef.current = null;
-      }
+      });
+      loadedModelsRef.current = [];
 
       if (mountRef.current && renderer.domElement) {
         mountRef.current.removeChild(renderer.domElement);
@@ -1261,21 +1235,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
   };
 
   return (
-    <>
-      <div ref={mountRef} style={{ width: '100%', height: '100vh', margin: 0, padding: 0 }} />
-      <ColorPicker
-        isOpen={colorPickerOpen}
-        x={colorPickerPos.x}
-        y={colorPickerPos.y}
-        onSelect={handleColorSelect}
-        onClose={() => {
-          setColorPickerOpen(false);
-          if (colorPickerPlaneRef.current) {
-            colorPickerPlaneRef.current.visible = false;
-          }
-        }}
-      />
-    </>
+    <div ref={mountRef} style={{ width: '100%', height: '100vh', margin: 0, padding: 0 }} />
   );
 };
 
