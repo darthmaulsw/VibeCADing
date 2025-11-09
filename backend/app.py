@@ -10,9 +10,18 @@ from dotenv import load_dotenv
 from elevenlabs import ElevenLabs
 from dedalus_labs import AsyncDedalus, DedalusRunner
 import asyncio
+from uuid import uuidv4
 
 load_dotenv()
 currentText = ""
+
+from supabase import create_client
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+print("[INFO] Supabase client initialized")
 
 elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
 if not elevenlabs_api_key:
@@ -87,7 +96,7 @@ def get_client():
     raise last_err
 
 @app.route('/api/hunyuan/generate', methods=['POST'])
-def generate_hunyuan_model():
+def generate_hunyuan_model(userid: str):
     import time
     start_time = time.time()
     print(f"[{time.strftime('%H:%M:%S')}] === Hunyuan 3D Model Generation Request Started ===")
@@ -215,6 +224,14 @@ def generate_hunyuan_model():
             total_elapsed = time.time() - start_time
             print(f"[{time.strftime('%H:%M:%S')}] === Request completed successfully in {total_elapsed:.1f} seconds ===")
             
+            response = supabase.table("models").insert({
+                "id": uuidv4(),
+                "user_id": userid,
+                "name": caption,
+                "created_at": start_time,
+                "glb_file_url": model_url
+            })
+            
             return jsonify({
                 'success': True,
                 'model_url': model_url,
@@ -251,7 +268,10 @@ def get_response():
     # Build the prompt using the same template, substituting currentText
     global currentText
     prompt_template = (
-        """ based on ${currentText} generate a quick response about what CAD model you are going to generate
+        """ 
+                RIGHT AWAY, HANDOFF THE TASK TO GEMINI. GEMINI WILL DO THE FOLLOWING:
+               
+                based on ${currentText} generate a quick response about what CAD model you are going to generate
                 this response should be about a sentence long, this response basically informs the user that the model is in fact being
                 generated and they should wait until it is done being finalized.
 
@@ -274,7 +294,7 @@ def get_response():
         async def _run():
             return await runner.run(
                 input=prompt,
-                model=["claude-sonnet-4-20250514"],
+                model=["openai/gpt-5", "gemini-2.5-flash"],
                 mcp_servers=["windsor/brave-search-mcp"],
                 stream=False,
             )
