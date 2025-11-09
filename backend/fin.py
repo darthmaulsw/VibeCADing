@@ -22,7 +22,7 @@ def gen_cad(p):
     code_blocks = [block.text for block in content if hasattr(block, "text")]
     full_text = "\n".join(code_blocks)
     
-    with open('output.scad', 'w') as f:
+    with open('output.scad', 'w', encoding='utf-8') as f:
         f.write(full_text)
 
 async def get_cad(user_prompt):
@@ -38,13 +38,23 @@ async def get_cad(user_prompt):
                 make sure to mention in the prompt to use MCAD libraries built into OpenSCAD whenever appropriate; moreover, all items must be attached together and there should not be any random floating bodies.
                 also, make sure the prompt specifies that the only return should be OpenSCAD code, with no supporting text or dialogue.
                 
+                WHENEVER YOU WANT TO IMPORT AN MCAD LIBRARY, MAKE SURE IT ACTUALLY EXISTS IN https://github.com/openscad/MCAD
+                I DONT WANT ANY HALLUCINATED LIBRARIES IN THE OPENSCAD CODE.
+
+                
                 the openScad code should be stored and not returned into the terminal. 
                 THE OPENSCAD CODE SHOULD BE WRITTEEN INTO A FILE VIA gen_cad
+
+                MAKE SURE THE ONLY THING PASSSED INTO GEN_CAD IS THE PROMPT FOR CAD GENERATION
+                THE FULL_TEXT IN GEN CAD SHOULD NOT BE WRITTEN TO THE SCAD FILE, ONLY THE OPEN SCAD CODE
 
                 YOU NEED TO WAIT UNTIL gen_cad HAS FINISHED WRITING THE FILE BEFORE YOU FINISH YOUR RESPONSE
 
                 ADDITIONALLY, IN THE output.scad FILE MAKE SURE TO REMOVE THE FIRST LINE IF IT CONTAINS ANYTHING LIKE "```openscad" OR "```"
                 AND THE LAST LINE IF IT CONTAINS "```"
+
+                DO NOT RUN GEN_CAD MORE THAN ONCE PER REQUEST, TRY TO GET THE BEST PROMPT POSSIBLE IN ONE GO, RE-ITERATE THE PROMPT
+                RATHER THAN CALLING GEN_CAD MULTIPLE TIMES.
                 """,
         model=["openai/gpt-5-mini","claude-sonnet-4-20250514"],
         tools = [gen_cad, mkprompt, ],
@@ -61,6 +71,6 @@ async def get_cad(user_prompt):
     
 if __name__=="__main__":
     # pp = "a gaming mouse"
-    asyncio.run(get_cad("Coffee mug"))
+    asyncio.run(get_cad("a BIC lighter, not the ones with the long nozzle, just a regular lighter"))
     # with open('output.scad', 'w') as f:
     #     f.write(gc)

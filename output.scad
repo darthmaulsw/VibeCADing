@@ -1,207 +1,185 @@
-// Parametric Coffee Mug - Generated Automated CAD Model
-// Date: 2024
-// Description: Fully parametric printable coffee mug with handle, fillets, and rim rounding
+```openscad
+// BIC-style Disposable Lighter Model
+// All dimensions in millimeters
 
-// ========================================
-// PARAMETERS (User-adjustable)
-// ========================================
+// ========== PARAMETERS ==========
+// Body dimensions
+body_h = 83;              // overall height in mm
+body_w = 26;              // width in mm (left-right)
+body_d = 12;              // depth / thickness in mm (front-back)
+wall_thickness = 1.5;     // plastic shell thickness
+corner_radius = 3;        // rounded corner radius for body
+interior_clearance = 0.5; // clearance between inner tank and shell
 
-// Mug body dimensions
-outer_diameter = 85;        // mm, overall outside diameter
-inner_diameter = 78;        // mm, nominal inside diameter at top (before inner lip rounding)
-mug_height = 95;            // mm, rim to base
-wall_thickness = 3.5;       // mm, wall thickness (default computed from diameters)
-base_thickness = 4;         // mm, solid base thickness
+// Flint wheel parameters
+wheel_diameter = 10;      // flint wheel diameter
+wheel_thickness = 3;      // flint wheel thickness
+wheel_teeth = 24;         // number of serrations on wheel
+wheel_offset_from_top = 6; // distance from top face to wheel center
 
-// Handle parameters
-handle_thickness = 8;       // mm, cross-section thickness of handle
-handle_clearance = 12;      // mm, minimum gap between inner handle surface and mug body
-handle_center_distance = (outer_diameter/2) + 12; // mm, radial distance of handle center-path from mug center
-handle_attach_height = [mug_height*0.30, mug_height*0.70]; // mm, [lower, upper] attachment heights
+// Nozzle parameters
+nozzle_diameter = 3;      // gas valve/nozzle diameter
+nozzle_length = 3;        // short valve length protruding above top
 
-// Aesthetic parameters
-fillet_radius = 2;          // mm, default fillet radius for edges
-rim_chamfer = 1;            // mm, chamfer or lip height on top edge
-top_inner_radius = 2;       // mm, inner lip rounding for comfortable drinking
-lid_compatible = false;     // boolean, add lid seating feature (not implemented in basic version)
+// Metal shield parameters
+shield_thickness = 0.8;   // thickness of metal shield / cage
+shield_height = 10;       // height of metal shield area
+shield_slot_count = 5;    // number of ventilation slots
 
-// Debug and rendering
-debug = false;              // boolean, visualize internal cavity in contrasting color
-$fn_param = 100;            // polygon resolution for circles/rounds
+// Button parameters
+button_width = 8;
+button_depth = 4;
+button_height = 2;
 
-// Computed parameters
-computed_wall_thickness = (outer_diameter - inner_diameter) / 2;
-effective_wall_thickness = wall_thickness; // Use explicit wall_thickness parameter
+// Quality control
+fillet_segments = 16;
 
-// Sanity checks
-min_wall = 2.0; // mm, minimum recommended wall thickness
-// Warning: If wall_thickness < 2.0 mm, printability may be reduced
+// ========== MODULES ==========
 
-// ========================================
-// GLOBAL SETTINGS
-// ========================================
-$fn = $fn_param;
-
-// ========================================
-// MODULES
-// ========================================
-
-// Module: mug_body()
-// Creates the outer shell with inner cavity subtracted
-module mug_body() {
+// Main body shell with rounded corners
+module body() {
     difference() {
-        // Outer shell
-        outer_shell();
+        // Outer shell with rounded corners
+        minkowski() {
+            cube([body_w - 2*corner_radius, 
+                  body_d - 2*corner_radius, 
+                  body_h - corner_radius], center=false);
+            cylinder(r=corner_radius, h=corner_radius, $fn=fillet_segments);
+        }
         
-        // Inner cavity (subtract to make hollow)
-        if (debug) {
-            color("red", 0.5) inner_cavity();
-        } else {
-            inner_cavity();
+        // Hollow interior
+        translate([wall_thickness, wall_thickness, wall_thickness])
+            minkowski() {
+                cube([body_w - 2*corner_radius - 2*wall_thickness + 2*interior_clearance, 
+                      body_d - 2*corner_radius - 2*wall_thickness + 2*interior_clearance, 
+                      body_h - corner_radius - wall_thickness], center=false);
+                cylinder(r=corner_radius - wall_thickness, h=0.01, $fn=fillet_segments);
+            }
+    }
+}
+
+// Metal shield/cage on top
+module metal_shield() {
+    shield_w = body_w - 4;
+    shield_d = body_d;
+    slot_width = 2;
+    slot_height = 6;
+    
+    translate([body_w/2, body_d/2, body_h - shield_height/2]) {
+        difference() {
+            // Outer shield box
+            cube([shield_w, shield_d, shield_height], center=true);
+            
+            // Inner hollow
+            cube([shield_w - 2*shield_thickness, 
+                  shield_d - 2*shield_thickness, 
+                  shield_height + 1], center=true);
+            
+            // Ventilation slots on front face
+            for (i = [0:shield_slot_count-1]) {
+                translate([-(shield_slot_count-1)*slot_width/2 + i*slot_width*1.5, 
+                          -shield_d/2 - 0.5, 
+                          -slot_height/2])
+                    cube([slot_width*0.6, shield_thickness + 1, slot_height], center=false);
+            }
+            
+            // Opening for nozzle
+            translate([0, -shield_d/2, shield_height/2 - 4])
+                rotate([-90, 0, 0])
+                    cylinder(d=nozzle_diameter + 2, h=shield_thickness + 1, $fn=fillet_segments);
         }
     }
 }
 
-// Module: outer_shell()
-// Creates the solid outer body with fillets
-module outer_shell() {
-    outer_radius = outer_diameter / 2;
+// Flint wheel with serrations
+module flint_wheel() {
+    wheel_y_pos = body_d * 0.65;
+    wheel_z_pos = body_h - wheel_offset_from_top;
     
-    // Main body with bottom fillet
-    hull() {
-        // Bottom ring for fillet
-        translate([0, 0, fillet_radius])
-            cylinder(r = outer_radius - fillet_radius, h = 0.01);
-        
-        // Top of mug body (before rim processing)
-        translate([0, 0, mug_height - fillet_radius])
-            cylinder(r = outer_radius, h = 0.01);
-    }
-    
-    // Top rim rounding (outer edge)
-    rotate_extrude()
-        translate([outer_radius - fillet_radius, mug_height - fillet_radius, 0])
-            circle(r = fillet_radius);
-}
-
-// Module: inner_cavity()
-// Creates the inner cavity to be subtracted from outer shell
-module inner_cavity() {
-    inner_radius = inner_diameter / 2;
-    cavity_depth = mug_height - base_thickness - top_inner_radius;
-    
-    // Main cylindrical cavity
-    translate([0, 0, base_thickness])
-        cylinder(r = inner_radius, h = cavity_depth + 0.01);
-    
-    // Top inner lip rounding (for comfortable drinking)
-    translate([0, 0, mug_height - top_inner_radius])
-        rotate_extrude()
-            translate([inner_radius, 0, 0])
-                circle(r = top_inner_radius);
-}
-
-// Module: mug_handle()
-// Creates the handle with C-shaped profile and attachments
-module mug_handle() {
-    outer_radius = outer_diameter / 2;
-    
-    // Handle path parameters
-    handle_width = handle_thickness;
-    handle_depth = handle_thickness;
-    
-    // C-shape path parameters
-    path_radius = handle_center_distance - outer_radius;
-    handle_angle_start = -45;   // degrees
-    handle_angle_end = 45;      // degrees
-    handle_sweep = handle_angle_end - handle_angle_start;
-    
-    // Attachment positions
-    attach_lower = handle_attach_height[0];
-    attach_upper = handle_attach_height[1];
-    attach_mid = (attach_lower + attach_upper) / 2;
-    
-    union() {
-        // Main handle arc
-        difference() {
-            union() {
-                // Outer handle path with vertical arc
-                for (angle = [handle_angle_start : 5 : handle_angle_end]) {
-                    hull() {
-                        // Current position
-                        translate([
-                            cos(angle) * handle_center_distance,
-                            sin(angle) * handle_center_distance,
-                            attach_lower + (attach_upper - attach_lower) * 
-                                (angle - handle_angle_start) / handle_sweep
-                        ])
-                            sphere(d = handle_depth);
-                        
-                        // Next position
-                        translate([
-                            cos(angle + 5) * handle_center_distance,
-                            sin(angle + 5) * handle_center_distance,
-                            attach_lower + (attach_upper - attach_lower) * 
-                                (angle + 5 - handle_angle_start) / handle_sweep
-                        ])
-                            sphere(d = handle_depth);
-                    }
-                }
+    translate([body_w/2, wheel_y_pos, wheel_z_pos]) {
+        rotate([90, 0, 0]) {
+            difference() {
+                // Base wheel cylinder
+                cylinder(d=wheel_diameter, h=wheel_thickness, center=true, $fn=fillet_segments*2);
                 
-                // Lower attachment blend
-                hull() {
-                    translate([outer_radius, 0, attach_lower])
-                        sphere(d = handle_depth);
-                    translate([
-                        cos(handle_angle_start) * handle_center_distance,
-                        sin(handle_angle_start) * handle_center_distance,
-                        attach_lower
-                    ])
-                        sphere(d = handle_depth);
-                }
-                
-                // Upper attachment blend
-                hull() {
-                    translate([outer_radius, 0, attach_upper])
-                        sphere(d = handle_depth);
-                    translate([
-                        cos(handle_angle_end) * handle_center_distance,
-                        sin(handle_angle_end) * handle_center_distance,
-                        attach_upper
-                    ])
-                        sphere(d = handle_depth);
+                // Create serrations (teeth)
+                for (i = [0:wheel_teeth-1]) {
+                    rotate([0, 0, i * 360/wheel_teeth])
+                        translate([wheel_diameter/2 - 0.5, 0, 0])
+                            rotate([0, 45, 0])
+                                cube([1.5, wheel_thickness + 1, 1.5], center=true);
                 }
             }
+            
+            // Axle pin connecting to body
+            cylinder(d=2, h=wheel_thickness + 4, center=true, $fn=fillet_segments);
         }
     }
 }
 
-// Module: assemble_mug()
-// Assembles the complete mug with body and handle
-module assemble_mug() {
-    union() {
-        // Mug body
-        if (debug) {
-            color("lightblue", 0.7) 
-                difference() {
-                    outer_shell();
-                }
-            color("red", 0.3)
-                inner_cavity();
-        } else {
-            mug_body();
-        }
+// Gas valve/nozzle
+module nozzle() {
+    nozzle_y_pos = body_d * 0.25;
+    nozzle_z_pos = body_h - shield_height/2;
+    
+    translate([body_w/2, nozzle_y_pos, nozzle_z_pos]) {
+        // Main nozzle body
+        cylinder(d=nozzle_diameter, h=nozzle_length + shield_height/2, $fn=fillet_segments);
         
-        // Handle
-        if (debug) {
-            color("green", 0.7) mug_handle();
-        } else {
-            mug_handle();
+        // Base connecting to body
+        translate([0, 0, -shield_height])
+            cylinder(d=nozzle_diameter + 1, h=shield_height, $fn=fillet_segments);
+    }
+}
+
+// Gas release button/lever
+module release_button() {
+    button_y_pos = body_d * 0.25;
+    button_z_pos = body_h - shield_height;
+    
+    translate([body_w/2, button_y_pos, button_z_pos]) {
+        hull() {
+            translate([0, 0, button_height/2])
+                cube([button_width, button_depth, button_height], center=true);
+            
+            // Connection to body
+            translate([0, 0, -1])
+                cube([button_width - 2, button_depth - 1, 0.5], center=true);
         }
     }
 }
 
-// ========================================
-// MAIN EXECUTION
-// ========================================
-assemble_mug();
+// Internal ledge/rim near top
+module top_ledge() {
+    ledge_height = 3;
+    ledge_z = body_h - shield_height - ledge_height;
+    
+    translate([wall_thickness*2, wall_thickness*2, ledge_z]) {
+        difference() {
+            cube([body_w - wall_thickness*4, 
+                  body_d - wall_thickness*4, 
+                  ledge_height]);
+            
+            translate([wall_thickness, wall_thickness, -0.5])
+                cube([body_w - wall_thickness*6, 
+                      body_d - wall_thickness*6, 
+                      ledge_height + 1]);
+        }
+    }
+}
+
+// Main assembly
+module lighter_model() {
+    union() {
+        body();
+        top_ledge();
+        metal_shield();
+        flint_wheel();
+        nozzle();
+        release_button();
+    }
+}
+
+// Render the complete lighter
+lighter_model();
+```
