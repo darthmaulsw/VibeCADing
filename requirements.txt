@@ -6,4 +6,5 @@ elevenlabs
 dedalus-labs
 gunicorn
 anthropic
+supabase
 
