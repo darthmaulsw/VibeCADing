@@ -1,0 +1,8 @@
+Flask
+flask-cors
+gradio_client
+python-dotenv
+elevenlabs
+dedalus-labs
+gunicorn
+
