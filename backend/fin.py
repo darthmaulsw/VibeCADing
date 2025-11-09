@@ -5,6 +5,8 @@ from prompts import mkprompt
 import os
 from dedalus_labs.utils.streaming import stream_async
 import anthropic
+from flask import Flask, jsonify
+import threading
 
 load_dotenv()
 
@@ -27,7 +29,7 @@ async def get_cad(user_prompt):
     p = mkprompt(user_prompt)
     print(p)
     result = await runner.run(
-        input=f"Generate the instructions according to the following prompt {p}, then  write a short confirmation sentence that you have generated a CAD file that meets the user's constraints. Output both the confirmation message and the specifications, separated by five newline characters.",
+        input=f"Generate the instructions according to the following prompt {p}.",
         model=["openai/gpt-5-mini"],
         mcp_servers=["windsor/brave-search-mcp"],
         stream=False,

@@ -1,8 +1,9 @@
 def mkprompt(p: str) -> str:
     return f"""
-        Help me write a prompt for Claude to generate an OpenSCAD code for the user's request. 
+        Help me write a role-based prompt to generate an OpenSCAD code for the user's request. 
         
-        Ensure that the prompt includes an instruction to use MCAD or other SCAD libraries built into OpenSCAD as much as possible to make the build more polished; moreover, all items must be attached together and there should not be any random floating bodies. 
+        The SCAD code MUST use MCAD and other SCAD libraries built into OpenSCAD as much as possible to make the build more polished; moreover, all items must be attached together and there should not be any random floating bodies. 
+        This is EXTREMELY IMPORTANT that the SCAD MUST 100% USE MCAD and other libraries. 
         
         Also, make sure the prompt specifies that the only return should be OpenSCAD code, with no supporting text or dialogue. 
         
