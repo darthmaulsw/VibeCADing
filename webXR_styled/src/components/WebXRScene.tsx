@@ -816,18 +816,30 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
       if (colorPickerOpen && leftGamepadRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current) {
         const gp = leftGamepadRef.current;
         
-        // Get joystick input for hue selection using readStick helper
-        const { x: stickX, y: stickY } = readStick(leftGamepadRef.current, 'left');
+        // Read left stick robustly
+        const { x: lx, y: ly } = readStick(gp, 'left');
         
-        const stickDeadzone = 0.1;
+        // Radial deadzone to ignore tiny drift
+        const radialDeadzone = 0.15;
+        const mag = Math.hypot(lx, ly);
         
-        // Update hue based on joystick angle
-        if (Math.abs(stickX) > stickDeadzone || Math.abs(stickY) > stickDeadzone) {
-          const angle = Math.atan2(stickX, -stickY);
-          const normalizedAngle = (angle + Math.PI * 2) % (Math.PI * 2);
-          const newHue = Math.floor((normalizedAngle / (Math.PI * 2)) * 360);
+        if (mag > radialDeadzone) {
+          // Angle in radians: right = 0, up = -PI/2, CCW positive
+          const angle = Math.atan2(-ly, lx);
           
-          if (Math.abs(colorPickerStateRef.current.hue - newHue) > 5) {
+          // Convert angle to hue (0-360 degrees)
+          // Color wheel starts at top (-PI/2), same as menu
+          const colorStartAngle = -Math.PI / 2;
+          
+          // Shift so 0 is top; wrap to [0, 2PI)
+          let a = angle - colorStartAngle;
+          a = (a % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+          
+          // Convert to hue (0-360)
+          const newHue = Math.floor((a / (Math.PI * 2)) * 360);
+          
+          // Update hue if changed significantly (reduce jitter)
+          if (Math.abs(colorPickerStateRef.current.hue - newHue) > 3) {
             colorPickerStateRef.current.hue = newHue;
             
             // Update color immediately
@@ -850,11 +862,10 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         );
         colorPickerTextureRef.current.needsUpdate = true;
         
-        // Handle joystick click to close
-        const currentStickClick = isThumbstickClick(gp);
-        const wasStickClickPressed = prevMenuStickClickRef.current;
-        
-        if (currentStickClick && !wasStickClickPressed) {
+        // Handle joystick click to confirm color selection and close
+        const clickNow = isThumbstickClick(gp);
+        if (clickNow && !prevMenuStickClickRef.current) {
+          // Color is already applied via handleColorSelect above
           // Close color picker
           setColorPickerOpen(false);
           if (colorPickerPlaneRef.current) {
@@ -862,8 +873,11 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
           }
         }
         
-        // Update previous stick click state for next frame
-        prevMenuStickClickRef.current = currentStickClick;
+        // Update edge detector
+        prevMenuStickClickRef.current = clickNow;
+      } else {
+        // Color picker closed → keep edge detector in sync
+        prevMenuStickClickRef.current = isThumbstickClick(leftGamepadRef.current ?? undefined);
       }
       
       // Update 3D color picker position to follow controller
