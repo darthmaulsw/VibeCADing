@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -129,9 +129,8 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   const isRotatingRef = useRef(false);
 
   // --- UI State ---
-  const [colorPickerOpen, setColorPickerOpen] = useState(false);
+  const colorPickerOpenRef = useRef(false);
   const menuOpenRef = useRef(false);
-  const menuPosRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   
   // --- 3D Menu in AR ---
   const menuPlaneRef = useRef<THREE.Mesh | null>(null);
@@ -146,6 +145,17 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
   const colorPickerCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const colorPickerTextureRef = useRef<THREE.CanvasTexture | null>(null);
   const colorPickerStateRef = useRef({ hue: 200, saturation: 80, lightness: 60, rotation: 0 });
+
+  const openColorPicker = () => {
+    colorPickerOpenRef.current = true;
+  };
+
+  const closeColorPicker = () => {
+    colorPickerOpenRef.current = false;
+    if (colorPickerPlaneRef.current) {
+      colorPickerPlaneRef.current.visible = false;
+    }
+  };
 
   // Helpers
   const setUniformScale = (obj: THREE.Object3D, s: number) => {
@@ -733,20 +743,9 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
               menuTextureRef.current.needsUpdate = true;
             }
             
-            // Project controller position to screen coordinates (for color picker positioning)
-            if (leftCtrlRef.current && cameraRef.current) {
-              const ctrlPos = worldPos(leftCtrlRef.current);
-              const vector = new THREE.Vector3();
-              vector.copy(ctrlPos);
-              vector.project(cameraRef.current);
-              
-              const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
-              const y = (-(vector.y * 0.5) + 0.5) * window.innerHeight;
-              menuPosRef.current = { x, y };
-            }
           } else {
             // Close color picker if menu closes
-            setColorPickerOpen(false);
+            closeColorPicker();
           }
         }
         prevYPressedRef.current = yNow;
@@ -823,12 +822,12 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
               );
               colorPickerTextureRef.current.needsUpdate = true;
             }
-            setColorPickerOpen(true);
+            openColorPicker();
           } else if (choice === 'Rotate') {
             // Optional: prime rotate overlay or state if you want
-            setColorPickerOpen(false);
+            closeColorPicker();
           } else if (choice === 'Scale') {
-            setColorPickerOpen(false);
+            closeColorPicker();
           }
         }
         prevStickClickRef.current = clickNow;
@@ -854,46 +853,41 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
       }
       
       // Handle color picker interaction
-      if (colorPickerOpen && leftGamepadRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current) {
+      if (colorPickerOpenRef.current && leftGamepadRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current) {
         const gp = leftGamepadRef.current;
-        
-        // Get joystick input for hue selection using legacy method (same as menu)
         const { x: lx, y: ly } = getLeftStickLegacy(gp);
         const mag = Math.hypot(lx, ly);
-        
-        // Adaptive deadzone (same as menu)
+
+        // Adaptive deadzone similar to radial menu
         let dz = 0.08;
         if (mag > 0.6) dz = 0.04;
-        
-        // Update hue based on joystick angle (only when clearly outside deadzone)
-        if (mag > dz) {
-          // Angle in radians: right = 0, up = -PI/2, CCW positive (same as color picker layout)
+        const hysteresis = dz + 0.03;
+
+        if (mag > hysteresis) {
+          // Angle in radians: right = 0, up = -PI/2
           const angle = Math.atan2(-ly, lx);
-          
-          // Color picker starts at -90° (top) for hue 0
-          // We need to shift the angle to match: angle - (-PI/2) = angle + PI/2
-          const offset = -Math.PI / 2; // -90 degrees
+          const offset = -Math.PI / 2; // align top
           let normalizedAngle = angle - offset;
           normalizedAngle = (normalizedAngle % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
-          
           const newHue = Math.floor((normalizedAngle / (Math.PI * 2)) * 360);
-          
-          // Only update if changed significantly (hysteresis for hue)
+
+          // Apply hysteresis to hue changes
+          const currentHue = colorPickerStateRef.current.hue;
           const hueDiff = Math.min(
-            Math.abs(colorPickerStateRef.current.hue - newHue),
-            Math.abs(colorPickerStateRef.current.hue - newHue + 360),
-            Math.abs(colorPickerStateRef.current.hue - newHue - 360)
+            Math.abs(currentHue - newHue),
+            Math.abs(currentHue - newHue + 360),
+            Math.abs(currentHue - newHue - 360)
           );
-          
+
           if (hueDiff > 3) {
             colorPickerStateRef.current.hue = newHue;
-            
+
             // Update color immediately
-            const color = `hsl(${newHue}, ${colorPickerStateRef.current.saturation}%, ${colorPickerStateRef.current.lightness}%)`;
+            const color = `hsl(${colorPickerStateRef.current.hue}, ${colorPickerStateRef.current.saturation}%, ${colorPickerStateRef.current.lightness}%)`;
             handleColorSelect(color);
           }
         }
-        
+ 
         // Update rotation for animation
         colorPickerStateRef.current.rotation = (colorPickerStateRef.current.rotation + 0.4) % 360;
         
@@ -911,17 +905,13 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         // Handle joystick click to close
         const clickNow = isThumbstickClick(gp);
         if (clickNow && !prevStickClickRef.current) {
-          // Close color picker
-          setColorPickerOpen(false);
-          if (colorPickerPlaneRef.current) {
-            colorPickerPlaneRef.current.visible = false;
-          }
+          closeColorPicker();
         }
         prevStickClickRef.current = clickNow;
       }
       
       // Update 3D color picker position to follow controller
-      if (colorPickerOpen && colorPickerPlaneRef.current && leftCtrlRef.current && cameraRef.current) {
+      if (colorPickerOpenRef.current && colorPickerPlaneRef.current && leftCtrlRef.current && cameraRef.current) {
         const ctrlPos = worldPos(leftCtrlRef.current);
         const ctrlDir = worldDir(leftCtrlRef.current);
         const pickerDistance = 0.4;
