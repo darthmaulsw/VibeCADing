@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import { ThreeScene } from './components/editor/ThreeScene';
 import { StatusHUD } from './components/ui/StatusHUD';
 import { Inspector } from './components/editor/Inspector';
 import { RadialMenu } from './components/editor/RadialMenu';
@@ -15,22 +14,29 @@ import { LandingScreen } from './components/landing/LandingScreen';
 import { VoiceInteractionModule } from './components/landing/VoiceInteractionModule';
 import { ModelCarousel } from './components/editor/ModelCarousel';
 import { PhotoCapture } from './components/editor/PhotoCapture';
+import { WebXRScene } from './components/editor/WebXRScene';
 import { setupScene } from './three/sceneSetup';
+import { getUserModels } from './lib/quickStorage';
+import type { Model } from './lib/types';
 
-type AppScreen = 'landing' | 'photo-capture' | 'voice-interaction' | 'carousel' | 'editor';
+type AppScreen = 'landing' | 'photo-capture' | 'voice-interaction' | 'carousel' | 'editor' | 'ar';
+
+// interface Toast {
+//   id: string;
+//   message: string;
+//   type: 'success' | 'error' | 'loading';
+// }
 
 function App() {
   const [screen, setScreen] = useState<AppScreen>('landing');
-  const [models, setModels] = useState<any[]>([
-    { id: '1', name: 'Model_Alpha', thumbnail: '', created_at: '2024-01-15' },
-    { id: '2', name: 'Model_Beta', thumbnail: '', created_at: '2024-01-20' },
-    { id: '3', name: 'Model_Gamma', thumbnail: '', created_at: '2024-01-25' },
-  ]);
+  const [models, setModels] = useState<Model[]>([]);
   const [mode, setMode] = useState('Edit');
   const [snapAngle] = useState(15);
   const [gridEnabled] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
+  const [xrSession, setXrSession] = useState<XRSession | null>(null);
+  const [arModelUrl, setArModelUrl] = useState<string | null>(null);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const [colorPickerPos, setColorPickerPos] = useState({ x: 0, y: 0 });
 
@@ -41,7 +47,37 @@ function App() {
   const [showReticle, setShowReticle] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const interactionManagerRef = useRef<any>(null);
+
+  // Load models from database on mount and when screen changes
+  useEffect(() => {
+    async function loadModels() {
+      const userId = localStorage.getItem('3d_system_user_id');
+      if (userId) {
+        console.log('Loading models for user:', userId);
+        const userModels = await getUserModels(userId);
+        setModels(userModels);
+        console.log('Loaded', userModels.length, 'models');
+      } else {
+        console.log('No user ID found');
+      }
+    }
+
+    loadModels();
+
+    // Listen for new model saves
+    const handleModelSaved = () => {
+      console.log('Model saved event received, reloading models...');
+      loadModels();
+    };
+
+    window.addEventListener('model-saved', handleModelSaved);
+
+    return () => {
+      window.removeEventListener('model-saved', handleModelSaved);
+    };
+  }, [screen]); // Reload when screen changes
 
   useEffect(() => {
     if (!containerRef.current || screen !== 'editor') return;
@@ -58,7 +94,7 @@ function App() {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() === 'm') {
-        setMenuOpen(!menuOpen);
+        setMenuOpen(prev => !prev);
         setMenuPos({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
       }
     };
@@ -140,20 +176,74 @@ function App() {
     }
   };
 
-  const handlePhotoCapture = (imageData: string) => {
+  const handlePhotoCapture = () => {
     setScreen('editor');
   };
 
-  const handleVoiceComplete = (action: 'new' | 'edit', model?: any) => {
+  const handleVoiceComplete = (action: 'new' | 'edit') => {
     if (action === 'new') {
       setScreen('editor');
-    } else if (action === 'edit' && model) {
+    } else if (action === 'edit') {
       setScreen('editor');
     }
   };
 
-  const handleModelSelect = (model: any) => {
+  const handleModelSelect = (model: Model) => {
+    console.log('Loading model:', model);
+    // Set the GLB URL globally so the editor can load it
+    if (model.glb_file_url) {
+      (window as unknown as { VIBECAD_LAST_GLB_URL?: string }).VIBECAD_LAST_GLB_URL = model.glb_file_url;
+    }
     setScreen('editor');
+  };
+
+  const handleEnterAR = async () => {
+    // Get the current model URL
+    const globalUrl = (window as unknown as { VIBECAD_LAST_GLB_URL?: string }).VIBECAD_LAST_GLB_URL;
+    
+    console.log('🥽 [AR] Attempting to enter AR mode...');
+    console.log('🥽 [AR] Global URL:', globalUrl);
+    
+    if (!globalUrl) {
+      console.error('🥽 [AR] No model URL found!');
+      alert('No model loaded. Generate or select a model first.');
+      return;
+    }
+
+    // Check if WebXR is supported
+    if (!navigator.xr) {
+      console.error('🥽 [AR] WebXR not supported');
+      alert('WebXR not supported on this device/browser.');
+      return;
+    }
+
+    try {
+      console.log('🥽 [AR] Requesting AR session...');
+      
+      // Request AR session
+      const session = await navigator.xr.requestSession('immersive-ar', {
+        requiredFeatures: ['hit-test', 'dom-overlay'],
+        optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'],
+        domOverlay: { root: document.body }
+      });
+
+      console.log('🥽 [AR] AR session started successfully!');
+      console.log('🥽 [AR] Loading model:', globalUrl);
+      
+      setXrSession(session);
+      setArModelUrl(globalUrl);
+      setScreen('ar');
+
+      // Handle session end
+      session.addEventListener('end', () => {
+        console.log('🥽 [AR] AR session ended');
+        setXrSession(null);
+        setScreen('editor');
+      });
+    } catch (error) {
+      console.error('🥽 [AR] Failed to start AR session:', error);
+      alert('Could not start AR. Make sure you are on a compatible device.');
+    }
   };
 
   return (
@@ -213,6 +303,25 @@ function App() {
           <CoordinateOverlay position={position} />
           <VoiceBot />
 
+          {/* AR Button */}
+          <button
+            onClick={handleEnterAR}
+            className="absolute top-6 right-6 px-6 py-3 font-mono text-sm transition-all duration-300 hover:scale-105"
+            style={{
+              background: 'rgba(0, 212, 255, 0.15)',
+              border: '2px solid #00D4FF',
+              borderRadius: '12px',
+              color: '#00D4FF',
+              boxShadow: '0 0 20px rgba(0, 212, 255, 0.3)',
+              cursor: 'pointer',
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-lg">📱</span>
+              <span className="tracking-wider">[ENTER AR]</span>
+            </div>
+          </button>
+
           <div
             className="absolute bottom-6 left-32 px-4 py-2 font-mono text-xs"
             style={{
@@ -255,6 +364,39 @@ function App() {
           </div>
         </>
       )}
+
+      {screen === 'ar' && arModelUrl && (
+        <div className="absolute inset-0 w-full h-full">
+          <WebXRScene xrSession={xrSession} modelUrl={arModelUrl} />
+          
+          {/* Exit AR Button */}
+          <button
+            onClick={() => {
+              if (xrSession) {
+                xrSession.end();
+              }
+              setScreen('editor');
+            }}
+            className="absolute top-6 left-6 px-6 py-3 font-mono text-sm transition-all duration-300"
+            style={{
+              background: 'rgba(255, 68, 68, 0.15)',
+              border: '2px solid #FF4444',
+              borderRadius: '12px',
+              color: '#FF4444',
+              boxShadow: '0 0 20px rgba(255, 68, 68, 0.3)',
+              cursor: 'pointer',
+              zIndex: 1000,
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-lg">❌</span>
+              <span className="tracking-wider">[EXIT AR]</span>
+            </div>
+          </button>
+        </div>
+      )}
+
+      {/* <ToastContainer toasts={toasts} onRemove={removeToast} /> */}
     </div>
   );
 }

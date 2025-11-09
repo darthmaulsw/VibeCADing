@@ -10,9 +10,19 @@ from dotenv import load_dotenv
 from elevenlabs import ElevenLabs
 from dedalus_labs import AsyncDedalus, DedalusRunner
 import asyncio
+from uuid import uuid4
+from fin import get_cad
 
 load_dotenv()
 currentText = ""
+
+from supabase import create_client
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+print("[INFO] Supabase client initialized")
 
 elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
 if not elevenlabs_api_key:
@@ -93,6 +103,13 @@ def generate_hunyuan_model():
     print(f"[{time.strftime('%H:%M:%S')}] === Hunyuan 3D Model Generation Request Started ===")
     
     try:
+        userid = request.form.get('userid')
+        if not userid:
+            print(f"[{time.strftime('%H:%M:%S')}] ERROR: No userid provided")
+            return jsonify({'error': 'userid is required'}), 400
+        
+        print(f"[{time.strftime('%H:%M:%S')}] User ID: {userid}")
+        
         # Get caption from form data
         caption = request.form.get('caption', 'Eric Zou, a male human being, Asian ethnicity')
         print(f"[{time.strftime('%H:%M:%S')}] Caption: {caption}")
@@ -215,6 +232,20 @@ def generate_hunyuan_model():
             total_elapsed = time.time() - start_time
             print(f"[{time.strftime('%H:%M:%S')}] === Request completed successfully in {total_elapsed:.1f} seconds ===")
             
+            # Save model to database
+            try:
+                print(f"[{time.strftime('%H:%M:%S')}] Saving model to database for user {userid}...")
+                response = supabase.table("models").insert({
+                    "id": str(uuid4()),
+                    "user_id": userid,
+                    "name": caption if caption else f"Model_{int(start_time)}",
+                    "glb_file_url": model_url
+                }).execute()
+                print(f"[{time.strftime('%H:%M:%S')}] Model saved to database successfully")
+            except Exception as db_error:
+                print(f"[{time.strftime('%H:%M:%S')}] Database save failed: {db_error}")
+                # Continue anyway - model generation was successful
+            
             return jsonify({
                 'success': True,
                 'model_url': model_url,
@@ -251,7 +282,10 @@ def get_response():
     # Build the prompt using the same template, substituting currentText
     global currentText
     prompt_template = (
-        """ based on ${currentText} generate a quick response about what CAD model you are going to generate
+        """ 
+                RIGHT AWAY, HANDOFF THE TASK TO GEMINI. GEMINI WILL DO THE FOLLOWING:
+               
+                based on ${currentText} generate a quick response about what CAD model you are going to generate
                 this response should be about a sentence long, this response basically informs the user that the model is in fact being
                 generated and they should wait until it is done being finalized.
 
@@ -274,7 +308,7 @@ def get_response():
         async def _run():
             return await runner.run(
                 input=prompt,
-                model=["claude-sonnet-4-20250514"],
+                model=["openai/gpt-5", "gemini-2.5-flash"],
                 mcp_servers=["windsor/brave-search-mcp"],
                 stream=False,
             )
@@ -390,6 +424,28 @@ def transcribe_audio():
 @app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({'status': 'ok'})
+
+@app.route('/api/claude/generate', methods=['GET'])
+def generate_claude():
+    import time
+    startTime = time.time()
+    p = request.form.get("prompt")
+    userid = request.form.get("userid")
+    asyncio.run(get_cad(p))
+    with open("output.scad", "r", encoding="utf-8") as shamalama:
+        cont = shamalama.read()
+    shit = cont.removeprefix("```openscad").removesuffix("```")
+    response = supabase.table("models").insert({
+        "id": str(uuid4()),
+        "user_id": userid,
+        "name": p,
+        "created_at": time.time(),
+        "scad_code": shit
+    }).execute()
+    return jsonify({
+        'success': True,
+        'scadcode': shit
+    })
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000, debug=True)

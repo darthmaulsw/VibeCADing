@@ -1,11 +1,5 @@
 import { useEffect, useState } from 'react';
-
-interface Model {
-  id: string;
-  name: string;
-  thumbnail: string;
-  created_at: string;
-}
+import type { Model } from '../../lib/types';
 
 interface VoiceInteractionModuleProps {
   onComplete: (action: 'new' | 'edit', model?: Model) => void;

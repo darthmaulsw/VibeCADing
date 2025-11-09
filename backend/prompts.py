@@ -1,8 +1,9 @@
 def mkprompt(p: str) -> str:
     return f"""
-        Help me write a prompt for Claude to generate an OpenSCAD code for the user's request. 
+        Help me write a role-based prompt to generate an OpenSCAD code for the user's request. 
         
-        Ensure that the prompt includes an instruction to use MCAD or other SCAD libraries built into OpenSCAD as much as possible to make the build more polished; moreover, all items must be attached together and there should not be any random floating bodies. 
+        The SCAD code MUST use MCAD and other SCAD libraries built into OpenSCAD as much as possible to make the build more polished; moreover, all items must be attached together and there should not be any random floating bodies. 
+        This is EXTREMELY IMPORTANT that the SCAD MUST 100% USE MCAD and other libraries. 
         
         Also, make sure the prompt specifies that the only return should be OpenSCAD code, with no supporting text or dialogue. 
         
@@ -10,15 +11,28 @@ def mkprompt(p: str) -> str:
         
         Here's an example of a good prompt: 
         
-        (Give me an OpenSCAD file of a cone:
+    			(Give me an OpenSCAD file of a cone:
 
-        Make sure the cone is realistic and looks like an actual traffic cone. Refer to at least 10 images online of basic orange traffic cones with two striped horizontal white stripes. The inside must be hollow and the bottom base must be square. 
+        		Make sure the cone is realistic and looks like an actual traffic cone. Refer to at least 10 images online of basic orange traffic cones with two striped horizontal white stripes. The inside must be hollow and the bottom base must be square. 
         
         IMPORTANT: the only return should be OpenSCAD code, with no supporting text or dialogue. 
 
-        IMPORTANT: Make sure to use MCAD libraries built into OpenSCAD whenever appropriate to build this cone. All items must be attached together, there should not be random floating bodies.)
+        ***
+        IMPORTANT: Make sure to use  MCAD libraries built into OpenSCAD whenever appropriate to build this cone. All items must be attached together, there should not be random floating bodies.)
+        WHENEVER YOU WANT TO IMPORT AN MCAD LIBRARY, MAKE SURE IT ACTUALLY EXISTS IN https://github.com/openscad/MCAD
+        I DONT WANT ANY HALLUCINATED LIBRARIES IN THE OPENSCAD CODE.
+        YOU HAVE HAVE HAVE TO USE AT LEAST ONE MCAD LIBRARY WHEN CREATING THE OBJECT
+        HERE IS THE GIT LINK SO YOU CAN UNDERSTAND WHAT I MEAN BY MCAD LIBRARY: https://github.com/openscad/MCAD 
+        ***
         
         If this specific item is found online, use specific reference OpenSCAD files when possible. 
-        
         Ensure that the dimensions are small enough (at most they should be <25) so that they can be compiled. 
+
+        IMPORTANT: MAKE SURE TO FIND REFERENCE IMAGES FIRST BEFORE OUTLINING THE PROMPT.
+        MAKE SURE TO CAPTURE ALL THE CAVEATS THAT MAKE AN ITEM WHAT IT IS, CAPTURE ALL DETAILS THAT WOULD MAKE THE ITEM FUNCTION AS INTENDED.
+        AND APPEAR AS INTENDED.
+
+        FINAL NOTICE: MAKE SURE TO REMOVE THE FIRST LINE IF IT CONTAINS ANYTHING LIKE "```openscad" OR "```"
+        AND THE LAST LINE IF IT CONTAINS "```"
+
     """
