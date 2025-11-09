@@ -152,7 +152,8 @@ export function setupScene(container: HTMLElement) {
     loadModelFromUrl(stashedUrl).catch((err) => {
       console.error('[ThreeScene] Failed to load stashed GLB:', err);
     });
-    delete (window as unknown as { VIBECAD_LAST_GLB_URL?: string }).VIBECAD_LAST_GLB_URL;
+    // DON'T delete the URL - keep it so AR can use it!
+    // delete (window as unknown as { VIBECAD_LAST_GLB_URL?: string }).VIBECAD_LAST_GLB_URL;
   }
 
   return {

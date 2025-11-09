@@ -14,11 +14,12 @@ import { LandingScreen } from './components/landing/LandingScreen';
 import { VoiceInteractionModule } from './components/landing/VoiceInteractionModule';
 import { ModelCarousel } from './components/editor/ModelCarousel';
 import { PhotoCapture } from './components/editor/PhotoCapture';
+import { WebXRScene } from './components/editor/WebXRScene';
 import { setupScene } from './three/sceneSetup';
 import { getUserModels } from './lib/quickStorage';
 import type { Model } from './lib/types';
 
-type AppScreen = 'landing' | 'photo-capture' | 'voice-interaction' | 'carousel' | 'editor';
+type AppScreen = 'landing' | 'photo-capture' | 'voice-interaction' | 'carousel' | 'editor' | 'ar';
 
 // interface Toast {
 //   id: string;
@@ -34,6 +35,8 @@ function App() {
   const [gridEnabled] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
+  const [xrSession, setXrSession] = useState<XRSession | null>(null);
+  const [arModelUrl, setArModelUrl] = useState<string | null>(null);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const [colorPickerPos, setColorPickerPos] = useState({ x: 0, y: 0 });
 
@@ -194,6 +197,55 @@ function App() {
     setScreen('editor');
   };
 
+  const handleEnterAR = async () => {
+    // Get the current model URL
+    const globalUrl = (window as unknown as { VIBECAD_LAST_GLB_URL?: string }).VIBECAD_LAST_GLB_URL;
+    
+    console.log('🥽 [AR] Attempting to enter AR mode...');
+    console.log('🥽 [AR] Global URL:', globalUrl);
+    
+    if (!globalUrl) {
+      console.error('🥽 [AR] No model URL found!');
+      alert('No model loaded. Generate or select a model first.');
+      return;
+    }
+
+    // Check if WebXR is supported
+    if (!navigator.xr) {
+      console.error('🥽 [AR] WebXR not supported');
+      alert('WebXR not supported on this device/browser.');
+      return;
+    }
+
+    try {
+      console.log('🥽 [AR] Requesting AR session...');
+      
+      // Request AR session
+      const session = await navigator.xr.requestSession('immersive-ar', {
+        requiredFeatures: ['hit-test', 'dom-overlay'],
+        optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'],
+        domOverlay: { root: document.body }
+      });
+
+      console.log('🥽 [AR] AR session started successfully!');
+      console.log('🥽 [AR] Loading model:', globalUrl);
+      
+      setXrSession(session);
+      setArModelUrl(globalUrl);
+      setScreen('ar');
+
+      // Handle session end
+      session.addEventListener('end', () => {
+        console.log('🥽 [AR] AR session ended');
+        setXrSession(null);
+        setScreen('editor');
+      });
+    } catch (error) {
+      console.error('🥽 [AR] Failed to start AR session:', error);
+      alert('Could not start AR. Make sure you are on a compatible device.');
+    }
+  };
+
   return (
     <div className="relative w-full h-screen" style={{ background: 'var(--bg-deep)', overflow: 'hidden' }}>
       {screen === 'landing' && <LandingScreen onSelectMode={handleLandingSelect} />}
@@ -251,6 +303,25 @@ function App() {
           <CoordinateOverlay position={position} />
           <VoiceBot />
 
+          {/* AR Button */}
+          <button
+            onClick={handleEnterAR}
+            className="absolute top-6 right-6 px-6 py-3 font-mono text-sm transition-all duration-300 hover:scale-105"
+            style={{
+              background: 'rgba(0, 212, 255, 0.15)',
+              border: '2px solid #00D4FF',
+              borderRadius: '12px',
+              color: '#00D4FF',
+              boxShadow: '0 0 20px rgba(0, 212, 255, 0.3)',
+              cursor: 'pointer',
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-lg">📱</span>
+              <span className="tracking-wider">[ENTER AR]</span>
+            </div>
+          </button>
+
           <div
             className="absolute bottom-6 left-32 px-4 py-2 font-mono text-xs"
             style={{
@@ -292,6 +363,37 @@ function App() {
             </div>
           </div>
         </>
+      )}
+
+      {screen === 'ar' && arModelUrl && (
+        <div className="absolute inset-0 w-full h-full">
+          <WebXRScene xrSession={xrSession} modelUrl={arModelUrl} />
+          
+          {/* Exit AR Button */}
+          <button
+            onClick={() => {
+              if (xrSession) {
+                xrSession.end();
+              }
+              setScreen('editor');
+            }}
+            className="absolute top-6 left-6 px-6 py-3 font-mono text-sm transition-all duration-300"
+            style={{
+              background: 'rgba(255, 68, 68, 0.15)',
+              border: '2px solid #FF4444',
+              borderRadius: '12px',
+              color: '#FF4444',
+              boxShadow: '0 0 20px rgba(255, 68, 68, 0.3)',
+              cursor: 'pointer',
+              zIndex: 1000,
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-lg">❌</span>
+              <span className="tracking-wider">[EXIT AR]</span>
+            </div>
+          </button>
+        </div>
       )}
 
       {/* <ToastContainer toasts={toasts} onRemove={removeToast} /> */}
