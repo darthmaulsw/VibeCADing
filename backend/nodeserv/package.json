@@ -1,0 +1,19 @@
+{
+  "name": "nodeserv",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@xeokit/xeokit-convert": "^1.3.1",
+    "body-parser": "^2.2.0",
+    "express": "^5.1.0",
+    "openscad-wasm": "^0.0.4",
+    "tmp-promise": "^3.0.3"
+  }
+}
