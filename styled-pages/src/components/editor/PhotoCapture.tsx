@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Camera, Upload, X, Download, Loader2 } from 'lucide-react'
 import { removeBackground } from '@imgly/background-removal'
+import { API_ENDPOINTS } from '../../lib/config'
 
 interface PhotoCaptureProps {
   onPhotoCapture?: (imageData: string) => void;
@@ -287,7 +288,7 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
         updateStatus(`⏳ Still generating... ${elapsed}s elapsed (this is normal for complex models)`);
       }, 30000);
 
-      const res = await fetch('http://localhost:8000/api/hunyuan/generate', {
+      const res = await fetch(API_ENDPOINTS.HUNYUAN_GENERATE, {
         method: 'POST',
         body: formData,
         signal: controller.signal,
