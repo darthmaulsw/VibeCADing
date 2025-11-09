@@ -720,8 +720,8 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         }
       }
       
-      // Handle menu navigation with left joystick
-      if (menuOpenRef.current && leftGamepadRef.current && menuCanvasRef.current && menuTextureRef.current) {
+      // Handle menu navigation with left joystick (only if color picker is not open)
+      if (menuOpenRef.current && !colorPickerOpen && leftGamepadRef.current && menuCanvasRef.current && menuTextureRef.current) {
         const gp = leftGamepadRef.current;
 
         // Keep the same order you want on the wheel. Index 0 will be the TOP wedge.
@@ -812,15 +812,25 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession }) => {
         prevMenuStickClickRef.current = isThumbstickClick(leftGamepadRef.current ?? undefined);
       }
       
-      // Handle color picker interaction
+      // Handle color picker interaction (color picker owns input when open)
       if (colorPickerOpen && leftGamepadRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current) {
         const gp = leftGamepadRef.current;
         
-        // Read left stick robustly
-        const { x: lx, y: ly } = readStick(gp, 'left');
+        // Read left stick exactly like earlier version: axes [2,3] with fallback to [0,1]
+        let lx = 0;
+        let ly = 0;
+        if (gp.axes && gp.axes.length > 3) {
+          lx = gp.axes[2] ?? 0;
+          ly = gp.axes[3] ?? 0;
+        }
+        // Fallback to axes 0 and 1
+        if (Math.abs(lx) < 0.1 && Math.abs(ly) < 0.1 && gp.axes && gp.axes.length > 1) {
+          lx = gp.axes[0] ?? 0;
+          ly = gp.axes[1] ?? 0;
+        }
         
-        // Radial deadzone to ignore tiny drift
-        const radialDeadzone = 0.15;
+        // Smaller radial deadzone (0.06) so tiny drift still moves the selector
+        const radialDeadzone = 0.06;
         const mag = Math.hypot(lx, ly);
         
         if (mag > radialDeadzone) {
