@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { InteractionManager } from './interactions';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
 export function setupScene(container: HTMLElement) {
   const scene = new THREE.Scene();
@@ -44,6 +45,78 @@ export function setupScene(container: HTMLElement) {
 
   const interactionManager = new InteractionManager(scene, camera, renderer, cube);
 
+  // GLB loader support
+  const loader = new GLTFLoader();
+  let currentModel: THREE.Object3D | null = null;
+
+  function clearCurrentModel() {
+    if (!currentModel) return;
+    scene.remove(currentModel);
+    currentModel.traverse((obj: THREE.Object3D) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        const mesh = obj as THREE.Mesh;
+        if (mesh.geometry) mesh.geometry.dispose();
+        const material = mesh.material as THREE.Material | THREE.Material[] | undefined;
+        if (material) {
+          if (Array.isArray(material)) material.forEach((mat) => mat.dispose());
+          else material.dispose();
+        }
+      }
+    });
+    currentModel = null;
+  }
+
+  async function loadModelFromUrl(url: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      loader.load(
+        url,
+        (gltf) => {
+          const mock = scene.getObjectByName('mockCube');
+          if (mock) scene.remove(mock);
+
+          clearCurrentModel();
+
+          const root = gltf.scene || gltf.scenes?.[0];
+          if (!root) {
+            reject(new Error('No scene in GLTF'));
+            return;
+          }
+
+          const box = new THREE.Box3().setFromObject(root);
+          const size = new THREE.Vector3();
+          box.getSize(size);
+          const center = new THREE.Vector3();
+          box.getCenter(center);
+
+          root.position.x += -center.x;
+          root.position.y += -center.y;
+          root.position.z += -center.z;
+
+          const maxAxis = Math.max(size.x, size.y, size.z) || 1;
+          const targetSize = 1.5;
+          const scale = targetSize / maxAxis;
+          root.scale.setScalar(scale);
+          root.position.y = 0.75;
+
+          root.traverse((obj: THREE.Object3D) => {
+            obj.castShadow = true;
+            (obj as THREE.Mesh).receiveShadow = true;
+          });
+
+          currentModel = root;
+          scene.add(root);
+          
+          // Update interaction manager to target the new model
+          interactionManager.setTargetObject(root);
+          
+          resolve();
+        },
+        undefined,
+        (err) => reject(err)
+      );
+    });
+  }
+
   const handleResize = () => {
     camera.aspect = container.clientWidth / container.clientHeight;
     camera.updateProjectionMatrix();
@@ -59,14 +132,40 @@ export function setupScene(container: HTMLElement) {
   }
   animate();
 
+  // Handle GLB load events from PhotoCapture
+  const handleLoadGlb = (event: Event) => {
+    const customEvent = event as CustomEvent<{ url: string }>;
+    const url = customEvent.detail?.url;
+    if (url) {
+      console.log('[ThreeScene] Received GLB load event:', url);
+      loadModelFromUrl(url).catch((err) => {
+        console.error('[ThreeScene] Failed to load GLB:', err);
+      });
+    }
+  };
+  window.addEventListener('vibecad:load-glb', handleLoadGlb);
+
+  // Check for stashed URL on mount (in case event was dispatched before listener was ready)
+  const stashedUrl = (window as unknown as { VIBECAD_LAST_GLB_URL?: string }).VIBECAD_LAST_GLB_URL;
+  if (stashedUrl) {
+    console.log('[ThreeScene] Found stashed GLB URL on mount:', stashedUrl);
+    loadModelFromUrl(stashedUrl).catch((err) => {
+      console.error('[ThreeScene] Failed to load stashed GLB:', err);
+    });
+    delete (window as unknown as { VIBECAD_LAST_GLB_URL?: string }).VIBECAD_LAST_GLB_URL;
+  }
+
   return {
     cleanup: () => {
       cancelAnimationFrame(animationId);
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('vibecad:load-glb', handleLoadGlb);
       interactionManager.dispose();
       renderer.dispose();
       container.removeChild(renderer.domElement);
+      clearCurrentModel();
     },
     interactionManager,
+    loadModelFromUrl,
   };
 }

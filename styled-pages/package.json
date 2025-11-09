@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@fontsource/space-mono": "^5.2.9",
+    "@imgly/background-removal": "^1.7.0",
     "@supabase/supabase-js": "^2.80.0",
     "@types/three": "^0.181.0",
     "lucide-react": "^0.344.0",
