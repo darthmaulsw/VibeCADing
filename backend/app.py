@@ -428,20 +428,42 @@ def health():
 @app.route('/api/claude/generate', methods=['GET'])
 def generate_claude():
     import time
-    startTime = time.time()
     p = request.form.get("prompt")
     userid = request.form.get("userid")
+    modelid = request.form.get("modelid")
     asyncio.run(get_cad(p))
     with open("output.scad", "r", encoding="utf-8") as shamalama:
         cont = shamalama.read()
     shit = cont.removeprefix("```openscad").removesuffix("```")
     response = supabase.table("models").insert({
-        "id": str(uuid4()),
+        "id": modelid,
         "user_id": userid,
         "name": p,
         "created_at": time.time(),
         "scad_code": shit
     }).execute()
+    return jsonify({
+        'success': True,
+        'scadcode': shit
+    })
+    
+@app.route('/api/claude/edit', methods=['GET'])
+def edit_claude():
+    import time
+    p = request.form.get("prompt")
+    userid = request.form.get("userid")
+    modelid = request.form.get("modelid")
+    response = supabase.table("models").select("*").eq("id", modelid).eq("user_id", userid).single().execute()
+    if response.data:
+        ret = response.data
+    else:
+        raise("no file found")
+    old = ret["scad_code"]
+    asyncio.run(wrapper(old, p))
+    with open("edited.scad", "r", encoding="utf-8") as shamalama:
+        cont = shamalama.read()
+    shit = cont.removeprefix("```openscad").removesuffix("```")
+    response = supabase.table("models").update({"scad_code", shit}).eq("id", modelid).eq("user_id", userid).execute()
     return jsonify({
         'success': True,
         'scadcode': shit
