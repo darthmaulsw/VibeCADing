@@ -66,6 +66,7 @@ function Model3DPreview({ modelUrl, isActive }: { modelUrl: string; isActive: bo
   const removeCurrentModel = () => {
     if (!sceneDataRef.current?.model) return;
     const { scene, model } = sceneDataRef.current;
+    console.debug('[Carousel] Disposing previous preview model');
     scene.remove(model);
     disposeObject(model);
     sceneDataRef.current.model = null;
@@ -119,6 +120,7 @@ function Model3DPreview({ modelUrl, isActive }: { modelUrl: string; isActive: bo
     if (!sceneReady || !sceneDataRef.current) return;
 
     if (!modelUrl) {
+      console.warn('[Carousel] No modelUrl provided for preview');
       setIsLoading(false);
       setLoadError(true);
       return;
@@ -130,6 +132,11 @@ function Model3DPreview({ modelUrl, isActive }: { modelUrl: string; isActive: bo
 
     const urlWithoutParams = targetUrl.split('#')[0]?.split('?')[0] ?? '';
     const extension = urlWithoutParams.split('.').pop()?.toLowerCase();
+    console.debug('[Carousel] Starting preview load', {
+      targetUrl,
+      extension,
+      isActive,
+    });
 
     setIsLoading(true);
     setLoadError(false);
@@ -173,7 +180,7 @@ function Model3DPreview({ modelUrl, isActive }: { modelUrl: string; isActive: bo
       onCleanup: () => void
     ) => {
       if (extension === 'glb' || extension === 'gltf') {
-        console.log('Loading GLB/GLTF model from blob:', targetUrl);
+        console.debug('[Carousel] Loading GLB/GLTF preview', { targetUrl, blobUrl });
         const loader = new GLTFLoader(manager);
         loader.load(
           blobUrl,
@@ -181,7 +188,17 @@ function Model3DPreview({ modelUrl, isActive }: { modelUrl: string; isActive: bo
             onCleanup();
             handleSuccess(gltf.scene);
           },
-          undefined,
+          (event) => {
+            if (event.lengthComputable && event.total > 0) {
+              const percent = ((event.loaded / event.total) * 100).toFixed(0);
+              console.debug('[Carousel] GLTF loader progress', {
+                targetUrl,
+                loaded: event.loaded,
+                total: event.total,
+                percent,
+              });
+            }
+          },
           (error) => {
             onCleanup();
             handleError(error);
@@ -196,7 +213,17 @@ function Model3DPreview({ modelUrl, isActive }: { modelUrl: string; isActive: bo
             onCleanup();
             handleSuccess(obj);
           },
-          undefined,
+          (event) => {
+            if (event.lengthComputable && event.total > 0) {
+              const percent = ((event.loaded / event.total) * 100).toFixed(0);
+              console.debug('[Carousel] OBJ loader progress', {
+                targetUrl,
+                loaded: event.loaded,
+                total: event.total,
+                percent,
+              });
+            }
+          },
           (error) => {
             onCleanup();
             handleError(error);
@@ -217,7 +244,17 @@ function Model3DPreview({ modelUrl, isActive }: { modelUrl: string; isActive: bo
             const mesh = new THREE.Mesh(geometry, material);
             handleSuccess(mesh);
           },
-          undefined,
+          (event) => {
+            if (event.lengthComputable && event.total > 0) {
+              const percent = ((event.loaded / event.total) * 100).toFixed(0);
+              console.debug('[Carousel] STL loader progress', {
+                targetUrl,
+                loaded: event.loaded,
+                total: event.total,
+                percent,
+              });
+            }
+          },
           (error) => {
             onCleanup();
             handleError(error);
@@ -231,20 +268,30 @@ function Model3DPreview({ modelUrl, isActive }: { modelUrl: string; isActive: bo
 
     const fetchAndLoad = async () => {
       try {
-        console.log('Fetching model data:', targetUrl);
+        console.debug('[Carousel] Fetching model data for preview', { targetUrl });
         const response = await fetch(targetUrl, { signal: controller.signal });
         if (!response.ok) {
           throw new Error(`HTTP ${response.status} (${response.statusText}) while fetching model`);
         }
 
         if (cancelled || controller.signal.aborted) return;
+        console.debug('[Carousel] Fetch response received', {
+          status: response.status,
+          statusText: response.statusText,
+          contentLength: response.headers.get('content-length'),
+        });
 
         const blob = await response.blob();
         if (cancelled || controller.signal.aborted) return;
+        console.debug('[Carousel] Blob created for preview', {
+          size: blob.size,
+          type: blob.type,
+        });
 
         currentBlobUrl = URL.createObjectURL(blob);
         const cleanup = () => {
           if (currentBlobUrl) {
+            console.debug('[Carousel] Revoking blob URL');
             URL.revokeObjectURL(currentBlobUrl);
             currentBlobUrl = null;
           }
@@ -263,15 +310,22 @@ function Model3DPreview({ modelUrl, isActive }: { modelUrl: string; isActive: bo
       cancelled = true;
       controller.abort();
       if (currentBlobUrl) {
+        console.debug('[Carousel] Cleanup: revoking blob URL');
         URL.revokeObjectURL(currentBlobUrl);
         currentBlobUrl = null;
       }
       activeUrlRef.current = null;
+      console.debug('[Carousel] Cancelled preview load', { targetUrl });
     };
   }, [modelUrl, sceneReady]);
 
   useEffect(() => {
     if (!sceneReady || !sceneDataRef.current) return;
+
+    console.debug('[Carousel] Preview animation effect triggered', {
+      isActive,
+      hasModel: Boolean(sceneDataRef.current.model),
+    });
 
     const animate = () => {
       if (!sceneDataRef.current) return;
