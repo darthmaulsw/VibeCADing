@@ -712,7 +712,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
       let leftY = false;
       let prevLeftY = false;
 
-    controllersStateRef.current.forEach((cs) => {
+      controllersStateRef.current.forEach((cs) => {
         const liveGp = cs.inputSource?.gamepad ?? cs.gamepad;
         if (!liveGp) return;
 
@@ -793,7 +793,12 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
         }
         prevYPressedRef.current = yNow;
       }
-
+      if (menuOpenRef.current) {
+        // When menu overlay is open, suppress other interaction states
+        leftGrab = false;
+        rightGrab = false;
+        rightB = false;
+      }
       // Update radial menu
       function updateRadialMenu() {
         if (!menuOpenRef.current) return;
@@ -880,7 +885,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
       }
       
       // Handle color picker interaction
-      if (colorPickerOpen && leftGamepadRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current) {
+      if (!menuOpenRef.current && colorPickerOpen && leftGamepadRef.current && colorPickerCanvasRef.current && colorPickerTextureRef.current) {
         const gp = leftGamepadRef.current;
         
         // Get joystick input for hue selection using readStick helper
@@ -963,7 +968,7 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
       const left = leftCtrlRef.current;
       const right = rightCtrlRef.current;
 
-      if (obj && left && right) {
+      if (!menuOpenRef.current && !colorPickerOpen && obj && left && right) {
         /* ===== 1) DRAGGING (highest priority) ===== */
         if (rightB) {
           // entering drag
