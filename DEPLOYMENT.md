@@ -60,9 +60,24 @@ After deployment, check:
 
 ## Local Development
 
-### Option 1: Use Heroku Backend (Recommended for Testing)
+### Default: Uses Local Backend (localhost:8000)
 
 Create `.env.local` in `styled-pages/` directory:
+
+**To use local backend:**
+1. Make sure your backend is running locally: `cd backend && python app.py`
+2. Start frontend: `cd styled-pages && npm run dev`
+3. Frontend will automatically use `http://localhost:8000`
+
+**Check:** Open browser console - you should see:
+```
+🔧 [Config] Using backend URL: http://localhost:8000
+🔧 [Config] VITE_BACKEND_URL env var: NOT SET
+```
+
+### Optional: Use Heroku Backend for Local Testing
+
+If you want to test against Heroku backend while developing locally, create `.env.local` in `styled-pages/`:
 
 ```env
 VITE_BACKEND_URL=https://arcane-fortress-69218-ec4429df10cc.herokuapp.com
@@ -70,22 +85,7 @@ VITE_SUPABASE_URL=your-supabase-url
 VITE_SUPABASE_ANON_KEY=your-supabase-key
 ```
 
-### Option 2: Use Local Backend
-
-If you want to run backend locally on port 8000:
-
-```env
-VITE_BACKEND_URL=http://localhost:8000
-VITE_SUPABASE_URL=your-supabase-url
-VITE_SUPABASE_ANON_KEY=your-supabase-key
-```
-
 **Important:** After creating `.env.local`, **restart your dev server** (`npm run dev`)
-
-**Check:** Open browser console - you should see:
-```
-🔧 [Config] Using backend URL: https://arcane-fortress-69218-ec4429df10cc.herokuapp.com
-```
 
 ---
 
