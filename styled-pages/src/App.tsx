@@ -21,7 +21,7 @@ import type { Model } from './lib/types';
 
 type AppScreen = 'landing' | 'photo-capture' | 'voice-interaction' | 'carousel' | 'editor' | 'ar';
 
-// interface Toast {
+// interface Toast {s
 //   id: string;
 //   message: string;
 //   type: 'success' | 'error' | 'loading';
@@ -85,13 +85,12 @@ function App() {
     let cancelled = false;
 
     const detectSupport = async () => {
-      const xrSystem = (navigator as Navigator & { xr?: XRSystem | undefined }).xr;
-      if (!xrSystem || !xrSystem.isSessionSupported) {
+      if (!('xr' in navigator)) {
         if (!cancelled) setXrSupport('unsupported');
         return;
       }
       try {
-        const supported = await xrSystem.isSessionSupported('immersive-ar');
+        const supported = await navigator.xr.isSessionSupported('immersive-ar');
         if (!cancelled) {
           setXrSupport(supported ? 'supported' : 'unsupported');
         }
@@ -248,8 +247,7 @@ function App() {
     }
 
     // Check if WebXR is supported
-    const xrSystem = (navigator as Navigator & { xr?: XRSystem | undefined }).xr;
-    if (!xrSystem) {
+    if (!navigator.xr) {
       console.error('🥽 [AR] WebXR not supported');
       alert('WebXR not supported on this device/browser.');
       return;
@@ -259,12 +257,12 @@ function App() {
       console.log('🥽 [AR] Requesting AR session...');
 
       // Request AR session
-      const sessionConfig: XRSessionInit & { domOverlay?: { root: Element } } = {
+      const sessionConfig: XRSessionInit = {
         requiredFeatures: ['hit-test'],
         optionalFeatures: ['dom-overlay', 'local-floor', 'bounded-floor', 'hand-tracking'],
       };
-      sessionConfig.domOverlay = { root: document.body };
-      const session = await xrSystem.requestSession('immersive-ar', sessionConfig);
+      (sessionConfig as any).domOverlay = { root: document.body };
+      const session = await navigator.xr.requestSession('immersive-ar', sessionConfig);
 
       console.log('🥽 [AR] AR session started successfully!');
       console.log('🥽 [AR] Loading model:', globalUrl);
@@ -288,13 +286,7 @@ function App() {
   };
 
   return (
-    <div
-      className="relative w-full h-screen"
-      style={{
-        background: screen === 'landing' ? 'transparent' : 'var(--bg-deep)',
-        overflow: 'hidden',
-      }}
-    >
+    <div className="relative w-full h-screen" style={{ background: 'var(--bg-deep)', overflow: 'hidden' }}>
       {screen === 'landing' && <LandingScreen onSelectMode={handleLandingSelect} />}
 
       {screen === 'photo-capture' && (

@@ -423,7 +423,7 @@ function ApiTestPage() {
           <div className="input-box">
             <label style={{ display: 'block', fontWeight: 600, marginBottom: '0.5rem' }}>Quick Mic Button</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <MicToFlask endpoint="/api/transcribe"/>
+              <MicToFlask endpoint="/api/transcribe" chain autoplay />
               <button onClick={handleDedalusSpeak} disabled={dedalusLoading}>
                 {dedalusLoading ? 'Generating & Speaking…' : 'Dedalus: Generate & Speak'}
               </button>

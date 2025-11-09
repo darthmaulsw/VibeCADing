@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import type { Model } from '../../lib/types';
 
 // Component to render 3D model preview - OPTIMIZED to load once and cache
@@ -9,18 +11,69 @@ function Model3DPreview({ modelUrl, isActive }: { modelUrl: string; isActive: bo
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [loadError, setLoadError] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [sceneReady, setSceneReady] = useState(false);
   const sceneDataRef = useRef<{
     scene: THREE.Scene;
-    camera: THREE.Camera;
+    camera: THREE.PerspectiveCamera;
     renderer: THREE.WebGLRenderer;
     model: THREE.Object3D | null;
     animationId: number | null;
-    isSetup: boolean;
   } | null>(null);
+  const activeUrlRef = useRef<string | null>(null);
 
-  // Setup scene ONCE - only on mount
+  const disposeObject = (object: THREE.Object3D) => {
+    object.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        if (child.geometry) {
+          child.geometry.dispose();
+        }
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        materials.forEach((material) => {
+          if (material) {
+            material.dispose();
+          }
+        });
+      }
+    });
+  };
+
+  const prepareModel = (object: THREE.Object3D) => {
+    object.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+
+    object.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(object);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+
+    if (Number.isFinite(center.x) && Number.isFinite(center.y) && Number.isFinite(center.z)) {
+      object.position.x = -center.x;
+      object.position.y = -center.y;
+      object.position.z = -center.z;
+    }
+
+    const maxDim = Math.max(size.x, size.y, size.z);
+    if (maxDim > 0 && Number.isFinite(maxDim)) {
+      const scale = 1.5 / maxDim;
+      object.scale.setScalar(scale);
+    }
+  };
+
+  const removeCurrentModel = () => {
+    if (!sceneDataRef.current?.model) return;
+    const { scene, model } = sceneDataRef.current;
+    console.log('[Carousel] Disposing previous preview model');
+    scene.remove(model);
+    disposeObject(model);
+    sceneDataRef.current.model = null;
+  };
+
   useEffect(() => {
-    if (!canvasRef.current || sceneDataRef.current?.isSetup) return;
+    if (!canvasRef.current || sceneDataRef.current) return;
 
     const canvas = canvasRef.current;
     const scene = new THREE.Scene();
@@ -47,83 +100,248 @@ function Model3DPreview({ modelUrl, isActive }: { modelUrl: string; isActive: bo
       renderer,
       model: null,
       animationId: null,
-      isSetup: true
     };
 
-    // Load the model ONCE
-    console.log('Loading model from URL:', modelUrl);
-    const loader = new GLTFLoader();
-    loader.load(
-      modelUrl,
-      (gltf) => {
-        if (!sceneDataRef.current) return;
-        
-        console.log('✅ Model loaded successfully:', modelUrl);
-        const model = gltf.scene;
-        
-        // Center and scale model
-        const box = new THREE.Box3().setFromObject(model);
-        const size = new THREE.Vector3();
-        box.getSize(size);
-        const center = new THREE.Vector3();
-        box.getCenter(center);
-        
-        model.position.x = -center.x;
-        model.position.y = -center.y;
-        model.position.z = -center.z;
-        
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const scale = 1.5 / maxDim;
-        model.scale.setScalar(scale);
-        
-        sceneDataRef.current.scene.add(model);
-        sceneDataRef.current.model = model;
-        setIsLoading(false);
-        setLoadError(false);
-      },
-      (progress) => {
-        console.log('Loading progress:', (progress.loaded / progress.total * 100).toFixed(0) + '%');
-      },
-      (error) => {
-        console.error('❌ Error loading model from:', modelUrl);
-        console.error('Error details:', error);
-        setLoadError(true);
-        setIsLoading(false);
-      }
-    );
+    setSceneReady(true);
 
     return () => {
       if (sceneDataRef.current) {
         if (sceneDataRef.current.animationId) {
           cancelAnimationFrame(sceneDataRef.current.animationId);
         }
+        removeCurrentModel();
         sceneDataRef.current.renderer.dispose();
-        if (sceneDataRef.current.model) {
-          sceneDataRef.current.scene.remove(sceneDataRef.current.model);
-        }
+        sceneDataRef.current = null;
       }
     };
-  }, [modelUrl]); // Only re-run if modelUrl changes
+  }, []);
 
-  // Separate animation effect - only controls rotation
   useEffect(() => {
-    if (!sceneDataRef.current) return;
+    if (!sceneReady || !sceneDataRef.current) return;
 
-    const { scene, camera, renderer, model } = sceneDataRef.current;
+    if (!modelUrl) {
+      console.warn('[Carousel] No modelUrl provided for preview');
+      setIsLoading(false);
+      setLoadError(true);
+      return;
+    }
 
-    function animate() {
+    let cancelled = false;
+    const targetUrl = modelUrl;
+    activeUrlRef.current = targetUrl;
+
+    const urlWithoutParams = targetUrl.split('#')[0]?.split('?')[0] ?? '';
+    const extension = urlWithoutParams.split('.').pop()?.toLowerCase();
+    console.log('[Carousel] Starting preview load', {
+      targetUrl,
+      extension,
+      isActive,
+    });
+
+    setIsLoading(true);
+    setLoadError(false);
+    removeCurrentModel();
+
+    const handleSuccess = (object: THREE.Object3D) => {
+      if (
+        cancelled ||
+        !sceneDataRef.current ||
+        activeUrlRef.current !== targetUrl
+      ) {
+        disposeObject(object);
+        return;
+      }
+
+      console.log('✅ Model loaded successfully:', targetUrl);
+      prepareModel(object);
+      sceneDataRef.current.scene.add(object);
+      sceneDataRef.current.model = object;
+      setIsLoading(false);
+      setLoadError(false);
+    };
+
+    const handleError = (error: unknown) => {
+      if (cancelled) return;
+      console.error('❌ Error loading model from:', targetUrl);
+      console.error('Error details:', error);
+      setLoadError(true);
+      setIsLoading(false);
+    };
+
+    const controller = new AbortController();
+    let currentBlobUrl: string | null = null;
+    const manager = new THREE.LoadingManager();
+    manager.onError = (url) => {
+      console.error('❌ Resource failed to load:', url);
+    };
+
+    const loadFromBlobUrl = (
+      blobUrl: string,
+      onCleanup: () => void
+    ) => {
+      if (extension === 'glb' || extension === 'gltf') {
+        console.log('[Carousel] Loading GLB/GLTF preview', { targetUrl, blobUrl });
+        const loader = new GLTFLoader(manager);
+        loader.load(
+          blobUrl,
+          (gltf) => {
+            onCleanup();
+            handleSuccess(gltf.scene);
+          },
+          (event) => {
+            if (event.lengthComputable && event.total > 0) {
+              const percent = ((event.loaded / event.total) * 100).toFixed(0);
+              console.log('[Carousel] GLTF loader progress', {
+                targetUrl,
+                loaded: event.loaded,
+                total: event.total,
+                percent,
+              });
+            }
+          },
+          (error) => {
+            onCleanup();
+            handleError(error);
+          }
+        );
+      } else if (extension === 'obj') {
+        console.log('Loading OBJ model from blob:', targetUrl);
+        const loader = new OBJLoader(manager);
+        loader.load(
+          blobUrl,
+          (obj) => {
+            onCleanup();
+            handleSuccess(obj);
+          },
+          (event) => {
+            if (event.lengthComputable && event.total > 0) {
+              const percent = ((event.loaded / event.total) * 100).toFixed(0);
+              console.log('[Carousel] OBJ loader progress', {
+                targetUrl,
+                loaded: event.loaded,
+                total: event.total,
+                percent,
+              });
+            }
+          },
+          (error) => {
+            onCleanup();
+            handleError(error);
+          }
+        );
+      } else if (extension === 'stl') {
+        console.log('Loading STL model from blob:', targetUrl);
+        const loader = new STLLoader(manager);
+        loader.load(
+          blobUrl,
+          (geometry) => {
+            onCleanup();
+            const material = new THREE.MeshStandardMaterial({
+              color: 0xb0c4de,
+              metalness: 0.15,
+              roughness: 0.65,
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+            handleSuccess(mesh);
+          },
+          (event) => {
+            if (event.lengthComputable && event.total > 0) {
+              const percent = ((event.loaded / event.total) * 100).toFixed(0);
+              console.log('[Carousel] STL loader progress', {
+                targetUrl,
+                loaded: event.loaded,
+                total: event.total,
+                percent,
+              });
+            }
+          },
+          (error) => {
+            onCleanup();
+            handleError(error);
+          }
+        );
+      } else {
+        onCleanup();
+        handleError(new Error(`Unsupported model format: ${extension ?? 'unknown'}`));
+      }
+    };
+
+    const fetchAndLoad = async () => {
+      try {
+        console.log('[Carousel] Fetching model data for preview', { targetUrl });
+        const response = await fetch(targetUrl, { signal: controller.signal });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status} (${response.statusText}) while fetching model`);
+        }
+
+        if (cancelled || controller.signal.aborted) return;
+        console.log('[Carousel] Fetch response received', {
+          status: response.status,
+          statusText: response.statusText,
+          contentLength: response.headers.get('content-length'),
+        });
+
+        const blob = await response.blob();
+        if (cancelled || controller.signal.aborted) return;
+        console.log('[Carousel] Blob created for preview', {
+          size: blob.size,
+          type: blob.type,
+        });
+
+        currentBlobUrl = URL.createObjectURL(blob);
+        const cleanup = () => {
+          if (currentBlobUrl) {
+            console.log('[Carousel] Revoking blob URL');
+            URL.revokeObjectURL(currentBlobUrl);
+            currentBlobUrl = null;
+          }
+        };
+
+        loadFromBlobUrl(currentBlobUrl, cleanup);
+      } catch (error) {
+        if (cancelled || controller.signal.aborted) return;
+        handleError(error);
+      }
+    };
+
+    fetchAndLoad();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (currentBlobUrl) {
+        console.log('[Carousel] Cleanup: revoking blob URL');
+        URL.revokeObjectURL(currentBlobUrl);
+        currentBlobUrl = null;
+      }
+      activeUrlRef.current = null;
+      console.log('[Carousel] Cancelled preview load', { targetUrl });
+    };
+  }, [modelUrl, sceneReady]);
+
+  useEffect(() => {
+    if (!sceneReady || !sceneDataRef.current) return;
+
+    console.log('[Carousel] Preview animation effect triggered', {
+      isActive,
+      hasModel: Boolean(sceneDataRef.current.model),
+    });
+
+    const animate = () => {
       if (!sceneDataRef.current) return;
-      
+
       sceneDataRef.current.animationId = requestAnimationFrame(animate);
-      
-      // Only rotate if active and model is loaded
+
+      const { scene, camera, renderer } = sceneDataRef.current;
+      const model = sceneDataRef.current.model;
+
       if (model && isActive) {
         model.rotation.y += 0.005;
       }
-      
+
       renderer.render(scene, camera);
-    }
-    
+    };
+
     animate();
 
     return () => {
@@ -132,7 +350,7 @@ function Model3DPreview({ modelUrl, isActive }: { modelUrl: string; isActive: bo
         sceneDataRef.current.animationId = null;
       }
     };
-  }, [isActive]); // Only re-run when isActive changes
+  }, [isActive, sceneReady]);
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
@@ -237,6 +455,7 @@ export function ModelCarousel({ models, onSelectModel }: ModelCarouselProps) {
 
       <div className="relative h-80 flex items-center justify-center overflow-visible">
         {getVisibleModels().map(({ model, offset }) => {
+          const previewUrl = model.glb_file_url ?? model.stl_file_url ?? model.obj_file_url;
           const isCenter = offset === 0;
           const scale = isCenter ? 1 : 0.7 - Math.abs(offset) * 0.1;
           const translateX = offset * 280;
@@ -269,8 +488,15 @@ export function ModelCarousel({ models, onSelectModel }: ModelCarouselProps) {
                     : '0 0 20px rgba(130, 209, 255, 0.1)',
                 }}
               >
-                {model.glb_file_url && (
-                  <Model3DPreview modelUrl={model.glb_file_url} isActive={isCenter} />
+                {previewUrl ? (
+                  <Model3DPreview modelUrl={previewUrl} isActive={isCenter} />
+                ) : (
+                  <div
+                    className="flex h-full items-center justify-center font-mono text-xs tracking-widest"
+                    style={{ color: '#00D4FF', opacity: 0.6 }}
+                  >
+                    NO PREVIEW
+                  </div>
                 )}
 
                 <div
@@ -307,7 +533,6 @@ export function ModelCarousel({ models, onSelectModel }: ModelCarouselProps) {
                   <>
                     {[0, 90, 180, 270].map((angle) => {
                       const size = 8;
-                      const offset = 0;
                       let x = '0%';
                       let y = '0%';
                       let transform = '';
