@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import { ThreeScene } from './components/editor/ThreeScene';
 import { StatusHUD } from './components/ui/StatusHUD';
 import { Inspector } from './components/editor/Inspector';
 import { RadialMenu } from './components/editor/RadialMenu';
@@ -16,16 +15,20 @@ import { VoiceInteractionModule } from './components/landing/VoiceInteractionMod
 import { ModelCarousel } from './components/editor/ModelCarousel';
 import { PhotoCapture } from './components/editor/PhotoCapture';
 import { setupScene } from './three/sceneSetup';
+import { getUserModels } from './lib/quickStorage';
+import type { Model } from './lib/types';
 
 type AppScreen = 'landing' | 'photo-capture' | 'voice-interaction' | 'carousel' | 'editor';
 
+// interface Toast {
+//   id: string;
+//   message: string;
+//   type: 'success' | 'error' | 'loading';
+// }
+
 function App() {
   const [screen, setScreen] = useState<AppScreen>('landing');
-  const [models, setModels] = useState<any[]>([
-    { id: '1', name: 'Model_Alpha', thumbnail: '', created_at: '2024-01-15' },
-    { id: '2', name: 'Model_Beta', thumbnail: '', created_at: '2024-01-20' },
-    { id: '3', name: 'Model_Gamma', thumbnail: '', created_at: '2024-01-25' },
-  ]);
+  const [models, setModels] = useState<Model[]>([]);
   const [mode, setMode] = useState('Edit');
   const [snapAngle] = useState(15);
   const [gridEnabled] = useState(true);
@@ -41,7 +44,37 @@ function App() {
   const [showReticle, setShowReticle] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const interactionManagerRef = useRef<any>(null);
+
+  // Load models from database on mount and when screen changes
+  useEffect(() => {
+    async function loadModels() {
+      const userId = localStorage.getItem('3d_system_user_id');
+      if (userId) {
+        console.log('Loading models for user:', userId);
+        const userModels = await getUserModels(userId);
+        setModels(userModels);
+        console.log('Loaded', userModels.length, 'models');
+      } else {
+        console.log('No user ID found');
+      }
+    }
+
+    loadModels();
+
+    // Listen for new model saves
+    const handleModelSaved = () => {
+      console.log('Model saved event received, reloading models...');
+      loadModels();
+    };
+
+    window.addEventListener('model-saved', handleModelSaved);
+
+    return () => {
+      window.removeEventListener('model-saved', handleModelSaved);
+    };
+  }, [screen]); // Reload when screen changes
 
   useEffect(() => {
     if (!containerRef.current || screen !== 'editor') return;
@@ -58,7 +91,7 @@ function App() {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() === 'm') {
-        setMenuOpen(!menuOpen);
+        setMenuOpen(prev => !prev);
         setMenuPos({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
       }
     };
@@ -140,19 +173,24 @@ function App() {
     }
   };
 
-  const handlePhotoCapture = (imageData: string) => {
+  const handlePhotoCapture = () => {
     setScreen('editor');
   };
 
-  const handleVoiceComplete = (action: 'new' | 'edit', model?: any) => {
+  const handleVoiceComplete = (action: 'new' | 'edit') => {
     if (action === 'new') {
       setScreen('editor');
-    } else if (action === 'edit' && model) {
+    } else if (action === 'edit') {
       setScreen('editor');
     }
   };
 
-  const handleModelSelect = (model: any) => {
+  const handleModelSelect = (model: Model) => {
+    console.log('Loading model:', model);
+    // Set the GLB URL globally so the editor can load it
+    if (model.glb_file_url) {
+      (window as unknown as { VIBECAD_LAST_GLB_URL?: string }).VIBECAD_LAST_GLB_URL = model.glb_file_url;
+    }
     setScreen('editor');
   };
 
@@ -255,6 +293,8 @@ function App() {
           </div>
         </>
       )}
+
+      {/* <ToastContainer toasts={toasts} onRemove={removeToast} /> */}
     </div>
   );
 }
