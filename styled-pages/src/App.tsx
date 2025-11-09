@@ -39,6 +39,8 @@ function App() {
   const [arModelUrl, setArModelUrl] = useState<string | null>(null);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const [colorPickerPos, setColorPickerPos] = useState({ x: 0, y: 0 });
+  const [xrSupport, setXrSupport] = useState<'checking' | 'supported' | 'unsupported'>('checking');
+  const [arError, setArError] = useState<string | null>(null);
 
   const [position, setPosition] = useState<[number, number, number]>([0, 0.5, 0]);
   const [rotation, setRotation] = useState<[number, number, number]>([0, 0, 0]);
@@ -78,6 +80,32 @@ function App() {
       window.removeEventListener('model-saved', handleModelSaved);
     };
   }, [screen]); // Reload when screen changes
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const detectSupport = async () => {
+      if (!('xr' in navigator)) {
+        if (!cancelled) setXrSupport('unsupported');
+        return;
+      }
+      try {
+        const supported = await navigator.xr.isSessionSupported('immersive-ar');
+        if (!cancelled) {
+          setXrSupport(supported ? 'supported' : 'unsupported');
+        }
+      } catch (error) {
+        console.error('🥽 [AR] Support detection failed:', error);
+        if (!cancelled) setXrSupport('unsupported');
+      }
+    };
+
+    detectSupport();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current || screen !== 'editor') return;
@@ -200,7 +228,15 @@ function App() {
   const handleEnterAR = async () => {
     // Get the current model URL
     const globalUrl = (window as unknown as { VIBECAD_LAST_GLB_URL?: string }).VIBECAD_LAST_GLB_URL;
-    
+    setArError(null);
+    if (xrSupport !== 'supported') {
+      const message = 'WebXR immersive AR is not available on this browser/device. Try Chrome on an ARCore/ARKit capable mobile device or a supported headset.';
+      console.error('🥽 [AR] Not supported:', message);
+      setArError(message);
+      alert(message);
+      return;
+    }
+
     console.log('🥽 [AR] Attempting to enter AR mode...');
     console.log('🥽 [AR] Global URL:', globalUrl);
     
@@ -219,13 +255,14 @@ function App() {
 
     try {
       console.log('🥽 [AR] Requesting AR session...');
-      
+
       // Request AR session
-      const session = await navigator.xr.requestSession('immersive-ar', {
-        requiredFeatures: ['hit-test', 'dom-overlay'],
-        optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'],
-        domOverlay: { root: document.body }
-      });
+      const sessionConfig: XRSessionInit = {
+        requiredFeatures: ['hit-test'],
+        optionalFeatures: ['dom-overlay', 'local-floor', 'bounded-floor', 'hand-tracking'],
+      };
+      (sessionConfig as any).domOverlay = { root: document.body };
+      const session = await navigator.xr.requestSession('immersive-ar', sessionConfig);
 
       console.log('🥽 [AR] AR session started successfully!');
       console.log('🥽 [AR] Loading model:', globalUrl);
@@ -242,7 +279,9 @@ function App() {
       });
     } catch (error) {
       console.error('🥽 [AR] Failed to start AR session:', error);
-      alert('Could not start AR. Make sure you are on a compatible device.');
+      const message = error instanceof DOMException ? error.message : String(error);
+      setArError(`Could not start AR session: ${message}`);
+      alert(`Could not start AR. ${message}`);
     }
   };
 
@@ -313,14 +352,45 @@ function App() {
               borderRadius: '12px',
               color: '#00D4FF',
               boxShadow: '0 0 20px rgba(0, 212, 255, 0.3)',
-              cursor: 'pointer',
+              cursor: xrSupport === 'supported' ? 'pointer' : 'not-allowed',
+              opacity: xrSupport === 'supported' ? 1 : 0.5,
             }}
+            disabled={xrSupport !== 'supported'}
           >
             <div className="flex items-center gap-2">
               <span className="text-lg">📱</span>
               <span className="tracking-wider">[ENTER AR]</span>
             </div>
           </button>
+
+          {xrSupport === 'unsupported' && (
+            <div
+              className="absolute top-20 right-6 max-w-xs px-4 py-3 font-mono text-[11px]"
+              style={{
+                background: 'rgba(14, 18, 36, 0.92)',
+                border: '1px solid rgba(130, 209, 255, 0.3)',
+                borderRadius: '8px',
+                color: '#C1CCE8',
+                boxShadow: '0 0 15px rgba(130, 209, 255, 0.15)',
+              }}
+            >
+              WebXR immersive AR isn’t available here. Use Chrome on an ARCore/ARKit capable device or a supported headset.
+            </div>
+          )}
+          {arError && (
+            <div
+              className="absolute top-40 right-6 max-w-sm px-4 py-3 font-mono text-[11px]"
+              style={{
+                background: 'rgba(36, 18, 18, 0.92)',
+                border: '1px solid rgba(255, 96, 96, 0.4)',
+                borderRadius: '8px',
+                color: '#FFB4B4',
+                boxShadow: '0 0 15px rgba(255, 96, 96, 0.2)',
+              }}
+            >
+              {arError}
+            </div>
+          )}
 
           <div
             className="absolute bottom-6 left-32 px-4 py-2 font-mono text-xs"
