@@ -85,12 +85,13 @@ function App() {
     let cancelled = false;
 
     const detectSupport = async () => {
-      if (!('xr' in navigator)) {
+      const xrSystem = (navigator as Navigator & { xr?: XRSystem | undefined }).xr;
+      if (!xrSystem || !xrSystem.isSessionSupported) {
         if (!cancelled) setXrSupport('unsupported');
         return;
       }
       try {
-        const supported = await navigator.xr.isSessionSupported('immersive-ar');
+        const supported = await xrSystem.isSessionSupported('immersive-ar');
         if (!cancelled) {
           setXrSupport(supported ? 'supported' : 'unsupported');
         }
@@ -247,7 +248,8 @@ function App() {
     }
 
     // Check if WebXR is supported
-    if (!navigator.xr) {
+    const xrSystem = (navigator as Navigator & { xr?: XRSystem | undefined }).xr;
+    if (!xrSystem) {
       console.error('🥽 [AR] WebXR not supported');
       alert('WebXR not supported on this device/browser.');
       return;
@@ -257,12 +259,12 @@ function App() {
       console.log('🥽 [AR] Requesting AR session...');
 
       // Request AR session
-      const sessionConfig: XRSessionInit = {
+      const sessionConfig: XRSessionInit & { domOverlay?: { root: Element } } = {
         requiredFeatures: ['hit-test'],
         optionalFeatures: ['dom-overlay', 'local-floor', 'bounded-floor', 'hand-tracking'],
       };
-      (sessionConfig as any).domOverlay = { root: document.body };
-      const session = await navigator.xr.requestSession('immersive-ar', sessionConfig);
+      sessionConfig.domOverlay = { root: document.body };
+      const session = await xrSystem.requestSession('immersive-ar', sessionConfig);
 
       console.log('🥽 [AR] AR session started successfully!');
       console.log('🥽 [AR] Loading model:', globalUrl);

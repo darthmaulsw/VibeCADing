@@ -130,7 +130,7 @@ export function LandingScreen({ onSelectMode }: LandingScreenProps) {
     tint.style.left = '0';
     tint.style.width = '100%';
     tint.style.height = '100%';
-    tint.style.background = 'rgba(10, 14, 28, 0.55)';
+    tint.style.background = 'rgba(10, 14, 28, 0.68)';
     tint.style.pointerEvents = 'none';
     tint.style.zIndex = '1';
     overlay.appendChild(tint);
@@ -146,7 +146,7 @@ export function LandingScreen({ onSelectMode }: LandingScreenProps) {
     loader.load(
       '/suzanne.glb',
       (gltf) => {
-        const mesh = gltf.scene;
+        const mesh = gltf.scene.clone(true);
         mesh.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) {
             const childMesh = child as THREE.Mesh;
@@ -171,8 +171,8 @@ export function LandingScreen({ onSelectMode }: LandingScreenProps) {
             }
           }
         });
-        mesh.scale.setScalar(2.8);
-        mesh.position.set(0, -0.5, 0);
+        mesh.scale.setScalar(2.6);
+        mesh.position.set(0, -0.05, 0);
         scene.add(mesh);
         modelRef.current = mesh;
         console.info('[Suzanne Overlay] GLB loaded');
@@ -180,10 +180,10 @@ export function LandingScreen({ onSelectMode }: LandingScreenProps) {
       undefined,
       () => {
         const fallback = new THREE.Mesh(
-          new THREE.SphereGeometry(2.4, 48, 48),
+          new THREE.SphereGeometry(2.7, 48, 48),
           new THREE.MeshNormalMaterial({ flatShading: true })
         );
-        fallback.position.set(0, -0.5, 0);
+        fallback.position.set(0, -0.3, 0);
         scene.add(fallback);
         modelRef.current = fallback;
         console.warn('[Suzanne Overlay] GLB load failed; using fallback sphere');
@@ -194,7 +194,6 @@ export function LandingScreen({ onSelectMode }: LandingScreenProps) {
       animationFrameRef.current = requestAnimationFrame(animate);
       if (modelRef.current) {
         modelRef.current.rotation.y += 0.0025;
-        modelRef.current.rotation.x += 0.0008;
       }
       renderer.render(scene, camera);
     };
@@ -594,12 +593,13 @@ export function LandingScreen({ onSelectMode }: LandingScreenProps) {
             width: '90%',
             maxWidth: '800px',
             height: '80%',
-            maxHeight: '600px',
+          maxHeight: '600px',
             opacity: showVimWindow ? 1 : 0,
             transition: 'all 0.3s ease-out',
             boxShadow: '0 20px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(130, 209, 255, 0.2)',
-            borderRadius: '8px',
-            overflow: 'hidden',
+          borderRadius: '8px',
+          overflow: 'hidden',
+          background: 'rgba(8, 12, 24, 0.92)',
           zIndex: 2147483647,
           }}
         >
