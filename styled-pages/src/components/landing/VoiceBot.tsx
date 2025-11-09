@@ -7,6 +7,8 @@ type TranscribeEnvelope = {
   intent?: 'iterate' | 'generate';
   job_id?: string;
   error?: string;
+  scad_code?: string;
+  model_id?: string;
 };
 
 type VoiceBotProps = {
@@ -14,6 +16,8 @@ type VoiceBotProps = {
   userid?: string;       // required for iterate path
   modelid?: string;      // required for iterate path
   promptFallback?: string; // optional: used if transcript is empty
+  convertEndpoint?: string; // default: /convert-scad
+  onModelReady?: () => void; // callback when model is successfully converted
 };
 
 export function VoiceBot({
@@ -21,6 +25,8 @@ export function VoiceBot({
   userid,
   modelid,
   promptFallback,
+  convertEndpoint = '/convert-scad',
+  onModelReady,
 }: VoiceBotProps) {
   const [pulseScale, setPulseScale] = useState(1);
   const [rotation, setRotation] = useState(0);
@@ -30,6 +36,7 @@ export function VoiceBot({
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const playingRef = useRef<HTMLAudioElement | null>(null);
+  const pollRef = useRef<number | null>(null);
 
   // Start mic capture
   const startRecording = async () => {
@@ -46,6 +53,88 @@ export function VoiceBot({
     } catch (e) {
       console.error('[VoiceBot] Failed to start mic:', e);
     }
+  };
+
+  // Convert SCAD to STL via Node server and notify editor
+  const handleScad = async (scad: string, mid?: string) => {
+    try {
+      console.log('[VoiceBot] Converting SCAD to STL via', convertEndpoint);
+      const resp = await fetch(convertEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scad, model_id: mid, userid }),
+      });
+
+      if (!resp.ok) {
+        console.warn('[VoiceBot] convert-scad failed:', resp.status);
+        return;
+      }
+
+      const ct = resp.headers.get('content-type') || '';
+      let modelUrl: string | null = null;
+
+      if (ct.includes('application/json')) {
+        const json: { url?: string } | null = await resp.json().catch(() => null);
+        modelUrl = json?.url || null;
+      } else if (ct.includes('application/sla') || ct.includes('model/') || ct.includes('application/octet-stream')) {
+        // Raw STL stream - create blob URL
+        const blob = await resp.blob();
+        modelUrl = URL.createObjectURL(blob);
+      }
+
+      if (modelUrl) {
+        // Store URL globally and dispatch event for 3D viewer
+        (window as unknown as { VIBECAD_LAST_GLB_URL?: string }).VIBECAD_LAST_GLB_URL = modelUrl;
+        try {
+          localStorage.setItem('last_glb_url', modelUrl);
+        } catch (storageErr) {
+          console.warn('[VoiceBot] localStorage set failed:', storageErr);
+        }
+        
+        // Dispatch both events:
+        // 1. vibecad:load-glb - for the 3D viewer (sceneSetup.ts)
+        window.dispatchEvent(new CustomEvent('vibecad:load-glb', { detail: { url: modelUrl } }));
+        // 2. model-saved - for App.tsx to reload model list
+        window.dispatchEvent(new CustomEvent('model-saved', { detail: { url: modelUrl, model_id: mid, userid } }));
+        
+        console.log('[VoiceBot] Model ready at', modelUrl);
+        
+        // Call the callback to navigate to editor
+        if (onModelReady) {
+          onModelReady();
+        }
+      }
+    } catch (e) {
+      console.warn('[VoiceBot] SCAD conversion exception:', e);
+    }
+  };
+
+  // Poll backend job endpoint until SCAD is ready
+  const pollGenerationJob = (jobId: string) => {
+    if (pollRef.current) window.clearInterval(pollRef.current);
+    console.log('[VoiceBot] Polling job:', jobId);
+    
+    pollRef.current = window.setInterval(async () => {
+      try {
+        const r = await fetch(`/api/generation/job/${jobId}`);
+        if (!r.ok) return;
+        
+        const j = await r.json();
+        console.log('[VoiceBot] Job status:', j?.status);
+        
+        if (j?.status === 'done' && j?.scad_code) {
+          window.clearInterval(pollRef.current!);
+          pollRef.current = null;
+          await handleScad(j.scad_code, j.model_id || modelid);
+        } else if (j?.status === 'error') {
+          window.clearInterval(pollRef.current!);
+          pollRef.current = null;
+          console.warn('[VoiceBot] Generation error:', j?.error);
+        }
+      } catch (pollErr) {
+        console.warn('[VoiceBot] Poll error (transient):', pollErr);
+      }
+    }, 2500);
   };
 
   // Stop & send to chained transcription/status + async CAD generation
@@ -118,17 +207,27 @@ export function VoiceBot({
           try {
             playingRef.current?.pause();
             playingRef.current?.removeAttribute('src');
-          } catch {}
+          } catch (pauseErr) {
+            // Ignore pause errors
+            console.warn('[VoiceBot] Failed to stop previous audio:', pauseErr);
+          }
 
           const a = new Audio(url);
           playingRef.current = a;
           a.onended = () => URL.revokeObjectURL(url);
-          a.play().catch(() => {
-            // autoplay blocked; ignore (a user gesture just occurred so it should usually work)
+          a.play().catch((playErr) => {
+            console.warn('[VoiceBot] Autoplay blocked or failed:', playErr);
           });
         } catch (e) {
           console.warn('[VoiceBot] Failed to decode or play status audio', e);
         }
+      }
+
+      // If SCAD arrived synchronously, convert right away; else poll for job
+      if (data?.scad_code) {
+        await handleScad(data.scad_code, data.model_id || modelid);
+      } else if (data?.job_id) {
+        pollGenerationJob(data.job_id);
       }
     } catch (e) {
       console.error('[VoiceBot] Network error:', e);
@@ -159,6 +258,13 @@ export function VoiceBot({
       setRotation((r) => (r + 1) % 360);
     }, 30);
     return () => clearInterval(rotateInterval);
+  }, []);
+
+  useEffect(() => {
+    // Cleanup polling interval on unmount
+    return () => {
+      if (pollRef.current) window.clearInterval(pollRef.current);
+    };
   }, []);
 
   return (

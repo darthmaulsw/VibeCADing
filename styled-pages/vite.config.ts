@@ -6,7 +6,17 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:5000', // if you run flask on 5000
+        target: 'http://127.0.0.1:5000', // Flask backend
+        changeOrigin: true,
+        secure: false,
+      },
+      '/convert-scad': {
+        target: 'http://127.0.0.1:3001', // Node conversion service
+        changeOrigin: true,
+        secure: false,
+      },
+      '/files': {
+        target: 'http://127.0.0.1:3001', // Static STL files from Node
         changeOrigin: true,
         secure: false,
       },

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { InteractionManager } from './interactions';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 
 export function setupScene(container: HTMLElement) {
   const scene = new THREE.Scene();
@@ -45,8 +46,9 @@ export function setupScene(container: HTMLElement) {
 
   const interactionManager = new InteractionManager(scene, camera, renderer, cube);
 
-  // GLB loader support
-  const loader = new GLTFLoader();
+  // GLB/STL loader support
+  const gltfLoader = new GLTFLoader();
+  const stlLoader = new STLLoader();
   let currentModel: THREE.Object3D | null = null;
 
   function clearCurrentModel() {
@@ -67,54 +69,117 @@ export function setupScene(container: HTMLElement) {
   }
 
   async function loadModelFromUrl(url: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      loader.load(
-        url,
-        (gltf) => {
-          const mock = scene.getObjectByName('mockCube');
-          if (mock) scene.remove(mock);
+    const extension = url.split('.').pop()?.toLowerCase();
+    
+    // Determine if STL or GLB/GLTF
+    if (extension === 'stl') {
+      return new Promise((resolve, reject) => {
+        stlLoader.load(
+          url,
+          (geometry) => {
+            const mock = scene.getObjectByName('mockCube');
+            if (mock) scene.remove(mock);
 
-          clearCurrentModel();
+            clearCurrentModel();
 
-          const root = gltf.scene || gltf.scenes?.[0];
-          if (!root) {
-            reject(new Error('No scene in GLTF'));
-            return;
+            // Create mesh from STL geometry
+            const material = new THREE.MeshStandardMaterial({
+              color: 0x00D4FF,
+              roughness: 0.7,
+              metalness: 0.3,
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+
+            // Center and scale the STL model
+            geometry.computeBoundingBox();
+            const bbox = geometry.boundingBox;
+            if (bbox) {
+              const center = new THREE.Vector3();
+              bbox.getCenter(center);
+              geometry.translate(-center.x, -center.y, -center.z);
+
+              const size = new THREE.Vector3();
+              bbox.getSize(size);
+              const maxAxis = Math.max(size.x, size.y, size.z) || 1;
+              const targetSize = 1.5;
+              const scale = targetSize / maxAxis;
+              mesh.scale.setScalar(scale);
+            }
+
+            mesh.position.y = 0.75;
+            currentModel = mesh;
+            scene.add(mesh);
+
+            // Update interaction manager to target the new model
+            interactionManager.setTargetObject(mesh);
+
+            console.log('[ThreeScene] STL model loaded:', url);
+            resolve();
+          },
+          undefined,
+          (err) => {
+            console.error('[ThreeScene] STL load error:', err);
+            reject(err);
           }
+        );
+      });
+    } else {
+      // Load as GLB/GLTF
+      return new Promise((resolve, reject) => {
+        gltfLoader.load(
+          url,
+          (gltf) => {
+            const mock = scene.getObjectByName('mockCube');
+            if (mock) scene.remove(mock);
 
-          const box = new THREE.Box3().setFromObject(root);
-          const size = new THREE.Vector3();
-          box.getSize(size);
-          const center = new THREE.Vector3();
-          box.getCenter(center);
+            clearCurrentModel();
 
-          root.position.x += -center.x;
-          root.position.y += -center.y;
-          root.position.z += -center.z;
+            const root = gltf.scene || gltf.scenes?.[0];
+            if (!root) {
+              reject(new Error('No scene in GLTF'));
+              return;
+            }
 
-          const maxAxis = Math.max(size.x, size.y, size.z) || 1;
-          const targetSize = 1.5;
-          const scale = targetSize / maxAxis;
-          root.scale.setScalar(scale);
-          root.position.y = 0.75;
+            const box = new THREE.Box3().setFromObject(root);
+            const size = new THREE.Vector3();
+            box.getSize(size);
+            const center = new THREE.Vector3();
+            box.getCenter(center);
 
-          root.traverse((obj: THREE.Object3D) => {
-            obj.castShadow = true;
-            (obj as THREE.Mesh).receiveShadow = true;
-          });
+            root.position.x += -center.x;
+            root.position.y += -center.y;
+            root.position.z += -center.z;
 
-          currentModel = root;
-          scene.add(root);
-          
-          // Update interaction manager to target the new model
-          interactionManager.setTargetObject(root);
-          
-          resolve();
-        },
-        undefined,
-        (err) => reject(err)
-      );
-    });
+            const maxAxis = Math.max(size.x, size.y, size.z) || 1;
+            const targetSize = 1.5;
+            const scale = targetSize / maxAxis;
+            root.scale.setScalar(scale);
+            root.position.y = 0.75;
+
+            root.traverse((obj: THREE.Object3D) => {
+              obj.castShadow = true;
+              (obj as THREE.Mesh).receiveShadow = true;
+            });
+
+            currentModel = root;
+            scene.add(root);
+            
+            // Update interaction manager to target the new model
+            interactionManager.setTargetObject(root);
+            
+            console.log('[ThreeScene] GLB model loaded:', url);
+            resolve();
+          },
+          undefined,
+          (err) => {
+            console.error('[ThreeScene] GLB load error:', err);
+            reject(err);
+          }
+        );
+      });
+    }
   }
 
   const handleResize = () => {

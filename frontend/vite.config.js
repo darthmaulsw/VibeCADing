@@ -10,6 +10,14 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:5000',
         changeOrigin: true,
+      },
+      '/convert-scad': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/files': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
       }
     }
   }

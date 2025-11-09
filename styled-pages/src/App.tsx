@@ -340,7 +340,7 @@ function App() {
           <DataStream />
           <DiagnosticPanel />
           <CoordinateOverlay position={position} />
-          <VoiceBot />
+          <VoiceBot onModelReady={() => setScreen('editor')} />
 
           {/* AR Button */}
           <button
