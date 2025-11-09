@@ -1220,30 +1220,62 @@ export const WebXRScene: React.FC<WebXRSceneProps> = ({ xrSession, modelUrl }) =
   }, [xrSession]);
 
 
+  const updateColorPickerStateFromColor = (color: string) => {
+    try {
+      const colorObj = new THREE.Color(color);
+      const hsl = { h: 0, s: 0, l: 0 };
+      colorObj.getHSL(hsl);
+      colorPickerStateRef.current = {
+        ...colorPickerStateRef.current,
+        hue: Math.round(hsl.h * 360),
+        saturation: Math.round(hsl.s * 100),
+        lightness: Math.round(hsl.l * 100),
+      };
+
+      if (colorPickerCanvasRef.current && colorPickerTextureRef.current) {
+        renderColorPickerToCanvas(
+          colorPickerCanvasRef.current,
+          true,
+          colorPickerStateRef.current.hue,
+          colorPickerStateRef.current.saturation,
+          colorPickerStateRef.current.lightness,
+          colorPickerStateRef.current.rotation
+        );
+        colorPickerTextureRef.current.needsUpdate = true;
+      }
+    } catch (error) {
+      console.warn('🥽 [AR] Failed to parse color for picker sync:', color, error);
+    }
+  };
+
+  const setMaterialColor = (material: THREE.Material, color: string) => {
+    const mat = material as THREE.Material & { color?: THREE.Color; needsUpdate?: boolean };
+    if (mat?.color instanceof THREE.Color) {
+      mat.color.set(color);
+      if (typeof mat.needsUpdate === 'boolean') {
+        mat.needsUpdate = true;
+      }
+    }
+  };
+
   // Handle color selection
   const handleColorSelect = (color: string) => {
-    if (objectRef.current) {
-      // Apply color to all meshes in the object
-      objectRef.current.traverse((child) => {
+    const root = objectRef.current;
+    if (root) {
+      root.traverse((child) => {
         if (child instanceof THREE.Mesh) {
           const mesh = child as THREE.Mesh;
-          if (mesh.material) {
-            if (Array.isArray(mesh.material)) {
-              mesh.material.forEach((mat) => {
-                if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshBasicMaterial) {
-                  mat.color.set(color);
-                }
-              });
-            } else {
-              const mat = mesh.material as THREE.MeshStandardMaterial | THREE.MeshBasicMaterial;
-              if (mat.color) {
-                mat.color.set(color);
-              }
-            }
+          const material = mesh.material;
+          if (Array.isArray(material)) {
+            material.forEach((mat) => setMaterialColor(mat, color));
+          } else if (material) {
+            setMaterialColor(material, color);
           }
         }
       });
     }
+
+    updateColorPickerStateFromColor(color);
   };
 
   return (
