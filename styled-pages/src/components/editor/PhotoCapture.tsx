@@ -453,10 +453,10 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
   };
 
   return (
-    <div className="absolute inset-0 flex items-center justify-center pointer-events-auto" style={{ background: '#000' }}>
+    <div className="relative w-full min-h-screen overflow-y-auto pointer-events-auto" style={{ background: '#000' }}>
       <button
         onClick={onBack}
-        className="absolute top-8 left-8 p-3 transition-all duration-300"
+        className="absolute top-8 left-8 p-3 transition-all duration-300 z-10"
         style={{
           background: '#000',
           border: '1px solid #00D4FF',
@@ -466,632 +466,463 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
         <X className="w-5 h-5" />
       </button>
 
+      <div className="flex flex-col items-center justify-center min-h-screen py-12 px-6">
       {captureMode === 'select' && !preview && (
-        <div className="flex flex-col items-center gap-12">
-          <div className="font-mono text-center" style={{ color: '#00D4FF' }}>
-            <div className="text-2xl tracking-wider mb-3">
-              {'>'} capture_object
-            </div>
-            <div className="text-xs tracking-widest opacity-60">
-              [SELECT VIEW: {currentView.toUpperCase()}]
-            </div>
-            <div className="text-[10px] tracking-widest opacity-40 mt-2">
-              Capture multiple angles for better accuracy
-            </div>
-          </div>
-
-          {/* View Selection Buttons */}
-          <div className="flex gap-4 flex-wrap justify-center">
-            {(['front', 'back', 'left', 'right'] as ViewType[]).map((view) => (
-              <button
-                key={view}
-                onClick={() => selectView(view)}
-                className="font-mono transition-all duration-300"
-                style={{
-                  padding: '12px 24px',
-                  background: currentView === view ? 'rgba(0, 212, 255, 0.2)' : '#000',
-                  border: `1px solid ${capturedViews[view] ? '#00FF00' : '#00D4FF'}`,
-                  color: capturedViews[view] ? '#00FF00' : '#00D4FF',
-                  opacity: currentView === view ? 1 : 0.7,
-                }}
-              >
-                <div className="text-sm tracking-wider">
-                  {view.toUpperCase()} {capturedViews[view] ? '✓' : ''}
+        <div className="w-full max-w-7xl mx-auto px-6">
+          <div className="grid grid-cols-12 gap-6 items-start">
+            {/* Left Panel - View Selection + Progress */}
+            <div className="col-span-3 flex flex-col gap-4">
+              <div className="font-mono text-xs p-4" style={{ background: 'rgba(0, 212, 255, 0.05)', border: '1px solid #00D4FF40', color: '#00D4FF' }}>
+                <div className="mb-2 font-semibold">SELECT VIEW</div>
+                <div className="flex flex-col gap-2">
+                  {(['front', 'back', 'left', 'right'] as ViewType[]).map((view) => (
+                    <button
+                      key={view}
+                      onClick={() => selectView(view)}
+                      className="font-mono text-xs transition-all duration-300 text-left"
+                      style={{
+                        padding: '8px 12px',
+                        background: currentView === view ? 'rgba(0, 212, 255, 0.2)' : 'transparent',
+                        border: `1px solid ${capturedViews[view] ? '#00FF00' : '#00D4FF40'}`,
+                        color: capturedViews[view] ? '#00FF00' : '#00D4FF',
+                      }}
+                    >
+                      {view.toUpperCase()} {capturedViews[view] ? '✓' : ''}
+                    </button>
+                  ))}
                 </div>
-              </button>
-            ))}
-          </div>
-
-          <div className="flex gap-8">
-            <button
-              onClick={startCamera}
-              className="group relative font-mono overflow-hidden transition-all duration-300"
-              style={{
-                padding: '48px 64px',
-                background: '#000',
-                border: '1px solid #00D4FF',
-                color: '#00D4FF',
-              }}
-            >
-              <div className="relative z-10 flex flex-col items-center gap-4">
-                <Camera className="w-16 h-16" />
-                <div className="text-xl tracking-wider">[1] USE CAMERA</div>
-                <div className="text-[10px] tracking-widest opacity-60">LIVE CAPTURE</div>
               </div>
 
-              <div
-                className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                style={{
-                  background: 'rgba(0, 212, 255, 0.1)',
-                }}
-              />
-            </button>
+              <div className="font-mono text-xs p-4" style={{ background: 'rgba(0, 212, 255, 0.05)', border: '1px solid #00D4FF40', color: '#00D4FF' }}>
+                <div className="mb-2 font-semibold">PROGRESS</div>
+                <div>
+                  {Object.keys(capturedViews).length}/4 views captured
+                  {hasAllViews() && <span className="ml-2" style={{ color: '#00FF00' }}>✓ READY</span>}
+                </div>
+              </div>
+            </div>
 
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="group relative font-mono overflow-hidden transition-all duration-300"
-              style={{
-                padding: '48px 64px',
-                background: '#000',
-                border: '1px solid #00D4FF',
-                color: '#00D4FF',
-              }}
-            >
-              <div className="relative z-10 flex flex-col items-center gap-4">
-                <Upload className="w-16 h-16" />
-                <div className="text-xl tracking-wider">[2] UPLOAD PHOTO</div>
-                <div className="text-[10px] tracking-widest opacity-60">SELECT FROM DEVICE</div>
+            {/* Center - Main Actions */}
+            <div className="col-span-6 flex flex-col items-center gap-8">
+              <div className="font-mono text-center" style={{ color: '#00D4FF' }}>
+                <div className="text-2xl tracking-wider mb-3">
+                  {'>'} capture_object
+                </div>
+                <div className="text-xs tracking-widest opacity-60">
+                  [SELECT VIEW: {currentView.toUpperCase()}]
+                </div>
+                <div className="text-[10px] tracking-widest opacity-40 mt-2">
+                  Capture multiple angles for better accuracy
+                </div>
               </div>
 
-              <div
-                className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                style={{
-                  background: 'rgba(0, 212, 255, 0.1)',
-                }}
-              />
-            </button>
+              <div className="flex gap-8">
+                <button
+                  onClick={startCamera}
+                  className="group relative font-mono overflow-hidden transition-all duration-300"
+                  style={{
+                    padding: '48px 64px',
+                    background: '#000',
+                    border: '1px solid #00D4FF',
+                    color: '#00D4FF',
+                  }}
+                >
+                  <div className="relative z-10 flex flex-col items-center gap-4">
+                    <Camera className="w-16 h-16" />
+                    <div className="text-xl tracking-wider">[1] USE CAMERA</div>
+                    <div className="text-[10px] tracking-widest opacity-60">LIVE CAPTURE</div>
+                  </div>
+                  <div
+                    className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                    style={{ background: 'rgba(0, 212, 255, 0.1)' }}
+                  />
+                </button>
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={(e) => handleFileUpload(e, currentView)}
-              className="hidden"
-            />
-          </div>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="group relative font-mono overflow-hidden transition-all duration-300"
+                  style={{
+                    padding: '48px 64px',
+                    background: '#000',
+                    border: '1px solid #00D4FF',
+                    color: '#00D4FF',
+                  }}
+                >
+                  <div className="relative z-10 flex flex-col items-center gap-4">
+                    <Upload className="w-16 h-16" />
+                    <div className="text-xl tracking-wider">[2] UPLOAD PHOTO</div>
+                    <div className="text-[10px] tracking-widest opacity-60">SELECT FROM DEVICE</div>
+                  </div>
+                  <div
+                    className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                    style={{ background: 'rgba(0, 212, 255, 0.1)' }}
+                  />
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => handleFileUpload(e, currentView)}
+                  className="hidden"
+                />
+              </div>
+            </div>
 
-          {/* Progress indicator */}
-          <div className="font-mono text-xs" style={{ color: '#00D4FF', opacity: 0.6 }}>
-            Progress: {Object.keys(capturedViews).length}/4 views captured
-            {hasAllViews() && <span className="ml-2" style={{ color: '#00FF00' }}>✓ READY</span>}
+            {/* Right Panel - Info */}
+            <div className="col-span-3 flex flex-col gap-4">
+              <div className="font-mono text-xs p-4" style={{ background: 'rgba(0, 212, 255, 0.05)', border: '1px solid #00D4FF40', color: '#00D4FF' }}>
+                <div className="mb-2 font-semibold">INFO</div>
+                <div className="text-[10px] opacity-70">
+                  Capture multiple angles (front, back, left, right) for the best 3D model quality.
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
       {captureMode === 'camera' && !preview && (
-        <div className="relative">
-          <div className="font-mono text-center mb-6" style={{ color: '#00D4FF' }}>
-            <div className="text-xl tracking-wider">{'>'} camera_active</div>
-            <div className="text-[10px] tracking-widest opacity-60 mt-2">
-              [POSITION OBJECT IN FRAME]
-            </div>
-          </div>
-
-          <div className="relative">
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              className="rounded-lg"
-              style={{
-                width: '800px',
-                height: '600px',
-                objectFit: 'cover',
-                border: '1px solid #00D4FF',
-              }}
-            />
-
-            {[0, 90, 180, 270].map((angle) => {
-              const size = 40;
-              let x = '0%';
-              let y = '0%';
-              let transform = '';
-
-              if (angle === 0) {
-                x = '100%';
-                y = '0%';
-                transform = 'translate(-100%, 0)';
-              } else if (angle === 90) {
-                x = '100%';
-                y = '100%';
-                transform = 'translate(-100%, -100%)';
-              } else if (angle === 180) {
-                x = '0%';
-                y = '100%';
-                transform = 'translate(0, -100%)';
-              } else {
-                x = '0%';
-                y = '0%';
-              }
-
-              return (
-                <div
-                  key={angle}
-                  className="absolute pointer-events-none"
-                  style={{
-                    left: x,
-                    top: y,
-                    width: `${size}px`,
-                    height: `${size}px`,
-                    transform,
-                  }}
-                >
-                  <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-                    <line
-                      x1={angle === 0 || angle === 90 ? size : 0}
-                      y1={angle === 90 || angle === 180 ? size : 0}
-                      x2={angle === 0 || angle === 90 ? size - 12 : 12}
-                      y2={angle === 90 || angle === 180 ? size : 0}
-                      stroke="#00D4FF"
-                      strokeWidth="2"
-                    />
-                    <line
-                      x1={angle === 0 || angle === 90 ? size : 0}
-                      y1={angle === 90 || angle === 180 ? size : 0}
-                      x2={angle === 0 || angle === 90 ? size : 0}
-                      y2={angle === 90 || angle === 180 ? size - 12 : 12}
-                      stroke="#00D4FF"
-                      strokeWidth="2"
-                    />
-                  </svg>
+        <div className="w-full max-w-7xl mx-auto px-6">
+          <div className="grid grid-cols-12 gap-6 items-start overflow-hidden">
+            {/* Left Panel - View Selection + Progress */}
+            <div className="col-span-3 flex flex-col gap-4 relative z-10">
+              <div className="font-mono text-xs p-4" style={{ background: 'rgba(0, 212, 255, 0.05)', border: '1px solid #00D4FF40', color: '#00D4FF' }}>
+                <div className="mb-2 font-semibold">VIEWS</div>
+                <div className="flex flex-col gap-2">
+                  {(['front', 'back', 'left', 'right'] as ViewType[]).map((view) => (
+                    <button
+                      key={view}
+                      onClick={() => selectView(view)}
+                      className="font-mono text-xs transition-all duration-300 text-left"
+                      style={{
+                        padding: '8px 12px',
+                        background: currentView === view ? 'rgba(0, 212, 255, 0.2)' : 'transparent',
+                        border: `1px solid ${capturedViews[view] ? '#00FF00' : '#00D4FF40'}`,
+                        color: capturedViews[view] ? '#00FF00' : '#00D4FF',
+                      }}
+                    >
+                      {view.toUpperCase()} {capturedViews[view] ? '✓' : ''}
+                    </button>
+                  ))}
                 </div>
-              );
-            })}
+              </div>
+              <div className="font-mono text-xs p-4" style={{ background: 'rgba(0, 212, 255, 0.05)', border: '1px solid #00D4FF40', color: '#00D4FF' }}>
+                <div className="mb-2 font-semibold">PROGRESS</div>
+                <div>{Object.keys(capturedViews).length}/4 captured</div>
+              </div>
+            </div>
 
-            <div
-              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-              style={{
-                width: '400px',
-                height: '400px',
-                border: '1px dashed #00D4FF',
-              }}
-            />
-          </div>
+            {/* Center - Camera */}
+            <div className="col-span-6 flex flex-col items-center overflow-hidden relative">
+              <div className="font-mono text-center mb-6" style={{ color: '#00D4FF' }}>
+                <div className="text-xl tracking-wider">{'>'} camera_active</div>
+                <div className="text-[10px] tracking-widest opacity-60 mt-2">[POSITION OBJECT IN FRAME]</div>
+              </div>
 
-          <div className="flex justify-center gap-4 mt-6">
-            <button
-              onClick={capturePhoto}
-              className="font-mono transition-all duration-300"
-              style={{
-                padding: '16px 48px',
-                background: 'rgba(0, 212, 255, 0.2)',
-                border: '1px solid #00D4FF',
-                color: '#00D4FF',
-              }}
-            >
-              <div className="text-lg tracking-wider">[CAPTURE]</div>
-            </button>
+              <div className="relative w-full flex justify-center" style={{ maxWidth: '100%', overflow: 'hidden' }}>
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  className="rounded-lg"
+                  style={{ 
+                    width: '100%', 
+                    maxWidth: '800px', 
+                    height: 'auto', 
+                    aspectRatio: '4/3',
+                    objectFit: 'cover', 
+                    border: '1px solid #00D4FF' 
+                  }}
+                />
+                {[0, 90, 180, 270].map((angle) => {
+                  const size = 40;
+                  let x = '0%';
+                  let y = '0%';
+                  let transform = '';
+                  if (angle === 0) { x = '100%'; y = '0%'; transform = 'translate(-100%, 0)'; }
+                  else if (angle === 90) { x = '100%'; y = '100%'; transform = 'translate(-100%, -100%)'; }
+                  else if (angle === 180) { x = '0%'; y = '100%'; transform = 'translate(0, -100%)'; }
+                  else { x = '0%'; y = '0%'; }
+                  return (
+                    <div key={angle} className="absolute pointer-events-none" style={{ left: x, top: y, width: `${size}px`, height: `${size}px`, transform }}>
+                      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+                        <line x1={angle === 0 || angle === 90 ? size : 0} y1={angle === 90 || angle === 180 ? size : 0} x2={angle === 0 || angle === 90 ? size - 12 : 12} y2={angle === 90 || angle === 180 ? size : 0} stroke="#00D4FF" strokeWidth="2" />
+                        <line x1={angle === 0 || angle === 90 ? size : 0} y1={angle === 90 || angle === 180 ? size : 0} x2={angle === 0 || angle === 90 ? size : 0} y2={angle === 90 || angle === 180 ? size - 12 : 12} stroke="#00D4FF" strokeWidth="2" />
+                      </svg>
+                    </div>
+                  );
+                })}
+                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none" style={{ width: '50%', maxWidth: '400px', aspectRatio: '1/1', border: '1px dashed #00D4FF' }} />
+              </div>
 
-            <button
-              onClick={stopCamera}
-              className="font-mono transition-all duration-300"
-              style={{
-                padding: '16px 48px',
-                background: '#000',
-                border: '1px solid #00D4FF',
-                color: '#00D4FF',
-              }}
-            >
-              <div className="text-lg tracking-wider">[CANCEL]</div>
-            </button>
+              <div className="flex justify-center gap-4 mt-6">
+                <button
+                  onClick={capturePhoto}
+                  className="font-mono transition-all duration-300"
+                  style={{ padding: '16px 48px', background: 'rgba(0, 212, 255, 0.2)', border: '1px solid #00D4FF', color: '#00D4FF' }}
+                >
+                  <div className="text-lg tracking-wider">[CAPTURE]</div>
+                </button>
+                <button
+                  onClick={stopCamera}
+                  className="font-mono transition-all duration-300"
+                  style={{ padding: '16px 48px', background: '#000', border: '1px solid #00D4FF', color: '#00D4FF' }}
+                >
+                  <div className="text-lg tracking-wider">[CANCEL]</div>
+                </button>
+              </div>
+            </div>
+
+            {/* Right Panel - Capture Options */}
+            <div className="col-span-3 flex flex-col gap-4 relative z-10">
+              <div className="font-mono text-xs p-4" style={{ background: 'rgba(0, 212, 255, 0.05)', border: '1px solid #00D4FF40', color: '#00D4FF' }}>
+                <div className="mb-2 font-semibold">CAPTURE OPTIONS</div>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="font-mono text-xs transition-all duration-300 text-left"
+                  style={{ padding: '8px 12px', background: 'transparent', border: '1px solid #00D4FF40', color: '#00D4FF' }}
+                >
+                  [UPLOAD PHOTO]
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
       {preview && (
-        <div className="relative">
-          <div className="font-mono text-center mb-6" style={{ color: '#00D4FF' }}>
-            <div className="text-xl tracking-wider">{'>'} image_captured [{currentView.toUpperCase()}]</div>
-            <div className="text-[10px] tracking-widest opacity-60 mt-2">
-              {processingBgRemoval ? '[PROCESSING BACKGROUND REMOVAL...]' : '[CONFIRM, RETAKE, OR SELECT ANOTHER VIEW]'}
-            </div>
-            <div className="text-[10px] tracking-widest opacity-40 mt-1">
-              {Object.keys(capturedViews).length}/4 views captured
-            </div>
-          </div>
+        <div className="w-full max-w-7xl mx-auto px-6">
+          <div className="grid grid-cols-12 gap-6 items-start">
+            {/* Left Panel - Actions + Progress */}
+            <div className="col-span-3 flex flex-col gap-4">
+              <div className="font-mono text-xs p-4" style={{ background: 'rgba(0, 212, 255, 0.05)', border: '1px solid #00D4FF40', color: '#00D4FF' }}>
+                <div className="mb-2 font-semibold">ACTIONS</div>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => {
+                      setCapturedViews(prev => ({ ...prev, [currentView]: preview }));
+                      setPreview(null);
+                      setCaptureMode('select');
+                    }}
+                    className="font-mono text-xs transition-all duration-300 text-left"
+                    style={{ padding: '8px 12px', background: 'rgba(0, 212, 255, 0.2)', border: '1px solid #00D4FF', color: '#00D4FF' }}
+                  >
+                    [SAVE VIEW]
+                  </button>
+                  <button
+                    onClick={resetCapture}
+                    className="font-mono text-xs transition-all duration-300 text-left"
+                    style={{ padding: '8px 12px', background: 'transparent', border: '1px solid #00D4FF', color: '#00D4FF' }}
+                  >
+                    [RETAKE]
+                  </button>
+                  <button
+                    onClick={() => {
+                      setPreview(null);
+                      setCaptureMode('select');
+                    }}
+                    className="font-mono text-xs transition-all duration-300 text-left"
+                    style={{ padding: '8px 12px', background: 'transparent', border: '1px solid #00D4FF', color: '#00D4FF' }}
+                  >
+                    [SELECT VIEW]
+                  </button>
+                  {Object.keys(capturedViews).length > 0 && (
+                    <button
+                      onClick={resetAllViews}
+                      className="font-mono text-xs transition-all duration-300 text-left"
+                      style={{ padding: '8px 12px', background: 'transparent', border: '1px solid #FF4444', color: '#FF4444' }}
+                    >
+                      [RESET ALL]
+                    </button>
+                  )}
+                </div>
+              </div>
 
-          <div className="relative" style={{ position: 'relative', display: 'inline-block' }}>
-            <img
-              src={processedPreview || preview}
-              alt="Captured"
-              style={{
-                maxWidth: '800px',
-                maxHeight: '600px',
-                objectFit: 'contain',
-                border: '1px solid #00D4FF',
-                backgroundColor: '#000',
-              }}
-            />
-            
-            {/* Futuristic Grid Overlay Animation */}
-            {processingBgRemoval && (
-              <div
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                  background: `
-                    linear-gradient(rgba(0, 212, 255, 0.1) 1px, transparent 1px),
-                    linear-gradient(90deg, rgba(0, 212, 255, 0.1) 1px, transparent 1px)
-                  `,
-                  backgroundSize: '20px 20px',
-                  animation: 'gridScan 2s linear infinite',
-                  border: '2px solid rgba(0, 212, 255, 0.5)',
-                  boxShadow: '0 0 20px rgba(0, 212, 255, 0.5), inset 0 0 20px rgba(0, 212, 255, 0.3)',
-                }}
-              >
-                <style>{`
-                  @keyframes gridScan {
-                    0% {
-                      backgroundPosition: 0 0;
-                      opacity: 0.3;
-                    }
-                    50% {
-                      opacity: 0.7;
-                    }
-                    100% {
-                      backgroundPosition: 20px 20px;
-                      opacity: 0.3;
-                    }
-                  }
-                `}</style>
-                {/* Scanning lines effect */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: '2px',
-                    background: 'linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.8), transparent)',
-                    animation: 'scanLine 1.5s linear infinite',
-                  }}
-                />
-                <style>{`
-                  @keyframes scanLine {
-                    0% { top: 0; }
-                    100% { top: 100%; }
-                  }
-                `}</style>
-                {/* Corner brackets */}
-                {[0, 90, 180, 270].map((angle, idx) => {
-                  const size = 30;
-                  let x = '0%';
-                  let y = '0%';
-                  let transform = '';
-                  
-                  if (angle === 0) {
-                    x = '100%';
-                    y = '0%';
-                    transform = 'translate(-100%, 0)';
-                  } else if (angle === 90) {
-                    x = '100%';
-                    y = '100%';
-                    transform = 'translate(-100%, -100%)';
-                  } else if (angle === 180) {
-                    x = '0%';
-                    y = '100%';
-                    transform = 'translate(0, -100%)';
-                  }
-                  
-                  return (
+              <div className="font-mono text-xs p-4" style={{ background: 'rgba(0, 212, 255, 0.05)', border: '1px solid #00D4FF40', color: '#00D4FF' }}>
+                <div className="mb-2 font-semibold">PROGRESS</div>
+                <div>{Object.keys(capturedViews).length}/4 captured</div>
+              </div>
+            </div>
+
+            {/* Center - Photo Preview */}
+            <div className="col-span-6 flex flex-col items-center">
+              <div className="font-mono text-center mb-6" style={{ color: '#00D4FF' }}>
+                <div className="text-xl tracking-wider">{'>'} image_captured [{currentView.toUpperCase()}]</div>
+                <div className="text-[10px] tracking-widest opacity-60 mt-2">
+                  {processingBgRemoval ? '[PROCESSING BACKGROUND REMOVAL...]' : '[CONFIRM, RETAKE, OR SELECT ANOTHER VIEW]'}
+                </div>
+              </div>
+
+              <div className="relative flex justify-center items-center">
+                <div className="relative" style={{ display: 'inline-block' }}>
+                  <img
+                    src={processedPreview || preview}
+                    alt="Captured"
+                    style={{ maxWidth: '800px', maxHeight: '600px', objectFit: 'contain', border: '1px solid #00D4FF', backgroundColor: '#000' }}
+                  />
+
+                  {processingBgRemoval && (
                     <div
-                      key={idx}
-                      className="absolute"
+                      className="absolute inset-0 pointer-events-none"
                       style={{
-                        left: x,
-                        top: y,
-                        width: `${size}px`,
-                        height: `${size}px`,
-                        transform,
-                        borderColor: '#00D4FF',
-                        borderWidth: '2px',
-                        borderStyle: 'solid',
-                        borderRight: angle === 0 || angle === 270 ? 'none' : '2px solid #00D4FF',
-                        borderBottom: angle === 0 || angle === 90 ? 'none' : '2px solid #00D4FF',
-                        animation: 'pulse 1s ease-in-out infinite',
+                        background: `
+                          linear-gradient(rgba(0, 212, 255, 0.1) 1px, transparent 1px),
+                          linear-gradient(90deg, rgba(0, 212, 255, 0.1) 1px, transparent 1px)
+                        `,
+                        backgroundSize: '20px 20px',
+                        animation: 'gridScan 2s linear infinite',
+                        border: '2px solid rgba(0, 212, 255, 0.5)',
+                        boxShadow: '0 0 20px rgba(0, 212, 255, 0.5), inset 0 0 20px rgba(0, 212, 255, 0.3)',
                       }}
-                    />
-                  );
-                })}
-                <style>{`
-                  @keyframes pulse {
-                    0%, 100% { opacity: 0.5; }
-                    50% { opacity: 1; }
-                  }
-                `}</style>
+                    >
+                      <style>{`
+                        @keyframes gridScan {
+                          0% { backgroundPosition: 0 0; opacity: 0.3; }
+                          50% { opacity: 0.7; }
+                          100% { backgroundPosition: 20px 20px; opacity: 0.3; }
+                        }
+                      `}</style>
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: '2px',
+                          background: 'linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.8), transparent)',
+                          animation: 'scanLine 1.5s linear infinite',
+                        }}
+                      />
+                      <style>{`
+                        @keyframes scanLine { 0% { top: 0; } 100% { top: 100%; } }
+                      `}</style>
+                      {[0, 90, 180, 270].map((angle, idx) => {
+                        const size = 30;
+                        let x = '0%'; let y = '0%'; let transform = '';
+                        if (angle === 0) { x = '100%'; y = '0%'; transform = 'translate(-100%, 0)'; }
+                        else if (angle === 90) { x = '100%'; y = '100%'; transform = 'translate(-100%, -100%)'; }
+                        else if (angle === 180) { x = '0%'; y = '100%'; transform = 'translate(0, -100%)'; }
+                        return (
+                          <div key={idx} className="absolute" style={{
+                            left: x, top: y, width: `${size}px`, height: `${size}px`, transform,
+                            borderColor: '#00D4FF', borderWidth: '2px', borderStyle: 'solid',
+                            borderRight: angle === 0 || angle === 270 ? 'none' : '2px solid #00D4FF',
+                            borderBottom: angle === 0 || angle === 90 ? 'none' : '2px solid #00D4FF',
+                            animation: 'pulse 1s ease-in-out infinite',
+                          }} />
+                        );
+                      })}
+                      <style>{`
+                        @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+                      `}</style>
+                    </div>
+                  )}
+
+                  {originalPreview && (
+                    <div className="absolute" style={{ bottom: '16px', right: '16px', width: '120px', height: '120px', border: '2px solid #00D4FF', background: '#000', padding: '4px', boxShadow: '0 0 10px rgba(0, 212, 255, 0.5)' }}>
+                      <img src={originalPreview} alt="Original" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <div className="absolute top-0 left-0 font-mono text-[8px]" style={{ background: 'rgba(0, 212, 255, 0.8)', color: '#000', padding: '2px 4px' }}>
+                        ORIGINAL
+                      </div>
+                    </div>
+                  )}
+
+                  {[0, 90, 180, 270].map((angle) => {
+                    const size = 40;
+                    let x = '0%'; let y = '0%'; let transform = '';
+                    if (angle === 0) { x = '100%'; y = '0%'; transform = 'translate(-100%, 0)'; }
+                    else if (angle === 90) { x = '100%'; y = '100%'; transform = 'translate(-100%, -100%)'; }
+                    else if (angle === 180) { x = '0%'; y = '100%'; transform = 'translate(0, -100%)'; }
+                    else { x = '0%'; y = '0%'; }
+                    return (
+                      <div key={angle} className="absolute pointer-events-none" style={{ left: x, top: y, width: `${size}px`, height: `${size}px`, transform }}>
+                        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+                          <line x1={angle === 0 || angle === 90 ? size : 0} y1={angle === 90 || angle === 180 ? size : 0} x2={angle === 0 || angle === 90 ? size - 12 : 12} y2={angle === 90 || angle === 180 ? size : 0} stroke="#00D4FF" strokeWidth="2" />
+                          <line x1={angle === 0 || angle === 90 ? size : 0} y1={angle === 90 || angle === 180 ? size : 0} x2={angle === 0 || angle === 90 ? size : 0} y2={angle === 90 || angle === 180 ? size - 12 : 12} stroke="#00D4FF" strokeWidth="2" />
+                        </svg>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            )}
-            
-            {/* Original photo in corner */}
-            {originalPreview && (
-              <div
-                className="absolute"
-                style={{
-                  bottom: '16px',
-                  right: '16px',
-                  width: '120px',
-                  height: '120px',
-                  border: '2px solid #00D4FF',
-                  background: '#000',
-                  padding: '4px',
-                  boxShadow: '0 0 10px rgba(0, 212, 255, 0.5)',
-                }}
-              >
-                <img
-                  src={originalPreview}
-                  alt="Original"
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'cover',
-                  }}
+            </div>
+
+            {/* Right Panel - Quality, Name, Generate, Status */}
+            <div className="col-span-3 flex flex-col gap-4">
+              <div className="font-mono text-xs p-4" style={{ background: 'rgba(0, 212, 255, 0.05)', border: '1px solid #00D4FF40', color: '#00D4FF' }}>
+                <div className="mb-2 font-semibold">QUALITY</div>
+                <div className="flex flex-col gap-2">
+                  {(['fast', 'balanced', 'high'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => setQualityMode(mode)}
+                      disabled={generating}
+                      className="font-mono text-xs transition-all duration-200 text-left"
+                      style={{
+                        padding: '8px 12px',
+                        background: qualityMode === mode ? 'rgba(0, 212, 255, 0.3)' : 'rgba(0, 212, 255, 0.05)',
+                        border: `1px solid ${qualityMode === mode ? '#00D4FF' : '#00D4FF40'}`,
+                        color: qualityMode === mode ? '#00D4FF' : '#00D4FF80',
+                        opacity: generating ? 0.5 : 1,
+                        cursor: generating ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {mode.toUpperCase()} <span className="opacity-60">({mode === 'fast' ? '~2min' : mode === 'balanced' ? '~3min' : '~5min'})</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="font-mono text-xs p-4" style={{ background: 'rgba(0, 212, 255, 0.05)', border: '1px solid #00D4FF40', color: '#00D4FF' }}>
+                <div className="mb-2 font-semibold">MODEL NAME</div>
+                <input
+                  type="text"
+                  value={modelName}
+                  onChange={(e) => setModelName(e.target.value)}
+                  placeholder="Enter model name..."
+                  disabled={generating}
+                  className="w-full font-mono text-xs px-3 py-2 bg-transparent transition-all duration-200"
+                  style={{ border: '1px solid #00D4FF40', color: '#00D4FF', opacity: generating ? 0.5 : 1, outline: 'none' }}
+                  onFocus={(e) => e.target.style.borderColor = '#00D4FF'}
+                  onBlur={(e) => e.target.style.borderColor = '#00D4FF40'}
                 />
-                <div
-                  className="absolute top-0 left-0 font-mono text-[8px]"
-                  style={{
-                    background: 'rgba(0, 212, 255, 0.8)',
-                    color: '#000',
-                    padding: '2px 4px',
-                  }}
-                >
-                  ORIGINAL
-                </div>
               </div>
-            )}
-
-            {[0, 90, 180, 270].map((angle) => {
-              const size = 40;
-              let x = '0%';
-              let y = '0%';
-              let transform = '';
-
-              if (angle === 0) {
-                x = '100%';
-                y = '0%';
-                transform = 'translate(-100%, 0)';
-              } else if (angle === 90) {
-                x = '100%';
-                y = '100%';
-                transform = 'translate(-100%, -100%)';
-              } else if (angle === 180) {
-                x = '0%';
-                y = '100%';
-                transform = 'translate(0, -100%)';
-              } else {
-                x = '0%';
-                y = '0%';
-              }
-
-              return (
-                <div
-                  key={angle}
-                  className="absolute pointer-events-none"
-                  style={{
-                    left: x,
-                    top: y,
-                    width: `${size}px`,
-                    height: `${size}px`,
-                    transform,
-                  }}
-                >
-                  <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-                    <line
-                      x1={angle === 0 || angle === 90 ? size : 0}
-                      y1={angle === 90 || angle === 180 ? size : 0}
-                      x2={angle === 0 || angle === 90 ? size - 12 : 12}
-                      y2={angle === 90 || angle === 180 ? size : 0}
-                      stroke="#00D4FF"
-                      strokeWidth="2"
-                    />
-                    <line
-                      x1={angle === 0 || angle === 90 ? size : 0}
-                      y1={angle === 90 || angle === 180 ? size : 0}
-                      x2={angle === 0 || angle === 90 ? size : 0}
-                      y2={angle === 90 || angle === 180 ? size - 12 : 12}
-                      stroke="#00D4FF"
-                      strokeWidth="2"
-                    />
-                  </svg>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="flex flex-col items-center gap-4 mt-6">
-            <div className="flex justify-center gap-4 flex-wrap">
-            <button
-                onClick={() => {
-                  setCapturedViews(prev => ({ ...prev, [currentView]: preview }));
-                  setPreview(null);
-                  setCaptureMode('select');
-                }}
-              className="font-mono transition-all duration-300"
-              style={{
-                padding: '16px 48px',
-                background: 'rgba(0, 212, 255, 0.2)',
-                border: '1px solid #00D4FF',
-                color: '#00D4FF',
-              }}
-            >
-                <div className="text-lg tracking-wider">[SAVE VIEW]</div>
-            </button>
-
-            <button
-              onClick={resetCapture}
-              className="font-mono transition-all duration-300"
-              style={{
-                padding: '16px 48px',
-                background: '#000',
-                border: '1px solid #00D4FF',
-                color: '#00D4FF',
-              }}
-            >
-              <div className="text-lg tracking-wider">[RETAKE]</div>
-            </button>
 
               <button
-                onClick={() => {
-                  setPreview(null);
-                  setCaptureMode('select');
-                }}
-                className="font-mono transition-all duration-300"
-                style={{
-                  padding: '16px 48px',
-                  background: '#000',
-                  border: '1px solid #00D4FF',
-                  color: '#00D4FF',
-                }}
+                onClick={generate3DModel}
+                disabled={generating}
+                className="font-mono transition-all duration-300 flex items-center justify-center gap-2"
+                style={{ padding: '12px 24px', background: generating ? 'rgba(0, 212, 255, 0.1)' : 'rgba(0, 212, 255, 0.2)', border: '1px solid #00D4FF', color: '#00D4FF', opacity: generating ? 0.6 : 1, cursor: generating ? 'not-allowed' : 'pointer' }}
               >
-                <div className="text-lg tracking-wider">[SELECT VIEW]</div>
+                {generating ? (<><Loader2 className="w-4 h-4 animate-spin" /><span className="text-sm">[GENERATING...]</span></>) : (<span className="text-sm">[GENERATE 3D MODEL]</span>)}
               </button>
 
-              {Object.keys(capturedViews).length > 0 && (
-                <button
-                  onClick={resetAllViews}
-                  className="font-mono transition-all duration-300"
-                  style={{
-                    padding: '16px 48px',
-                    background: '#000',
-                    border: '1px solid #FF4444',
-                    color: '#FF4444',
-                  }}
-                >
-                  <div className="text-lg tracking-wider">[RESET ALL]</div>
-                </button>
+              {generationStatus && (
+                <div className="font-mono text-xs p-3 overflow-y-auto" style={{ maxHeight: '150px', background: '#000', border: '1px solid #00D4FF', color: '#00D4FF', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {generationStatus}
+                </div>
+              )}
+
+              {modelUrl && (
+                <div className="font-mono text-xs p-3 flex flex-col items-center gap-2" style={{ background: 'rgba(0, 212, 255, 0.1)', border: '1px solid #00D4FF', color: '#00D4FF' }}>
+                  <div className="text-xs">📥 3D MODEL READY</div>
+                  <a
+                    href={modelUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 transition-all duration-300 hover:opacity-70"
+                    style={{ padding: '8px 16px', background: 'rgba(0, 212, 255, 0.2)', border: '1px solid #00D4FF', color: '#00D4FF', textDecoration: 'none', fontSize: '10px' }}
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>DOWNLOAD GLB</span>
+                  </a>
+                </div>
               )}
             </div>
-
-            {/* Quality Mode Selector */}
-            <div className="flex gap-4 items-center justify-center mt-4">
-              <span className="font-mono text-xs" style={{ color: '#00D4FF' }}>QUALITY:</span>
-              {(['fast', 'balanced', 'high'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => setQualityMode(mode)}
-                  disabled={generating}
-                  className="font-mono text-xs px-4 py-2 transition-all duration-200"
-                  style={{
-                    background: qualityMode === mode ? 'rgba(0, 212, 255, 0.3)' : 'rgba(0, 212, 255, 0.05)',
-                    border: `1px solid ${qualityMode === mode ? '#00D4FF' : '#00D4FF40'}`,
-                    color: qualityMode === mode ? '#00D4FF' : '#00D4FF80',
-                    opacity: generating ? 0.5 : 1,
-                    cursor: generating ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {mode.toUpperCase()}
-                  <span className="ml-2 opacity-60">
-                    ({mode === 'fast' ? '~2min' : mode === 'balanced' ? '~3min' : '~5min'})
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            {/* Model Name Input */}
-            <div className="mt-6">
-              <label className="block font-mono text-xs mb-2" style={{ color: '#00D4FF' }}>
-                MODEL NAME (optional)
-              </label>
-              <input
-                type="text"
-                value={modelName}
-                onChange={(e) => setModelName(e.target.value)}
-                placeholder="Enter model name..."
-                disabled={generating}
-                className="w-full font-mono text-sm px-4 py-2 bg-transparent transition-all duration-200"
-                style={{
-                  border: '1px solid #00D4FF40',
-                  color: '#00D4FF',
-                  opacity: generating ? 0.5 : 1,
-                  outline: 'none',
-                }}
-                onFocus={(e) => e.target.style.borderColor = '#00D4FF'}
-                onBlur={(e) => e.target.style.borderColor = '#00D4FF40'}
-              />
-              <div className="font-mono text-[10px] mt-1 opacity-60" style={{ color: '#00D4FF' }}>
-                Leave empty for auto-generated name
-              </div>
-            </div>
-
-            <button
-              onClick={generate3DModel}
-              disabled={generating}
-              className="font-mono transition-all duration-300 flex items-center gap-3 mt-6"
-              style={{
-                padding: '16px 48px',
-                background: generating ? 'rgba(0, 212, 255, 0.1)' : 'rgba(0, 212, 255, 0.2)',
-                border: '1px solid #00D4FF',
-                color: '#00D4FF',
-                opacity: generating ? 0.6 : 1,
-                cursor: generating ? 'not-allowed' : 'pointer',
-              }}
-            >
-              {generating ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <div className="text-lg tracking-wider">[GENERATING...]</div>
-                </>
-              ) : (
-                <div className="text-lg tracking-wider">[GENERATE 3D MODEL]</div>
-              )}
-            </button>
-
-            {generationStatus && (
-              <div
-                className="font-mono text-xs mt-4 p-4 overflow-y-auto"
-                style={{
-                  maxWidth: '800px',
-                  maxHeight: '200px',
-                  background: '#000',
-                  border: '1px solid #00D4FF',
-                  color: '#00D4FF',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                }}
-              >
-                {generationStatus}
-              </div>
-            )}
-
-            {modelUrl && (
-              <div
-                className="font-mono mt-4 p-4 flex flex-col items-center gap-3"
-                style={{
-                  background: 'rgba(0, 212, 255, 0.1)',
-                  border: '1px solid #00D4FF',
-                  color: '#00D4FF',
-                }}
-              >
-                <div className="text-sm tracking-wider">📥 3D MODEL READY</div>
-                <a
-                  href={modelUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 transition-all duration-300 hover:opacity-70"
-                  style={{
-                    padding: '12px 24px',
-                    background: 'rgba(0, 212, 255, 0.2)',
-                    border: '1px solid #00D4FF',
-                    color: '#00D4FF',
-                    textDecoration: 'none',
-                  }}
-                >
-                  <Download className="w-4 h-4" />
-                  <span className="text-sm tracking-wider">DOWNLOAD GLB FILE</span>
-                </a>
-              </div>
-            )}
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
