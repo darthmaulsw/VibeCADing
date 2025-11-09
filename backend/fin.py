@@ -43,7 +43,7 @@ async def shit(crap):
     return gc
     
 if __name__=="__main__":
-    pp = "a gaming mouse"
+    pp = "snowman"
     gc = asyncio.run(shit(pp))
-    with open('output.scad', 'w') as f:
+    with open('output.scad', 'w', encoding='utf-8') as f:
         f.write(gc)

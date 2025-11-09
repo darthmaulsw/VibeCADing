@@ -1,188 +1,109 @@
 ```openscad
-// Ergonomic Gaming Mouse Model
-// All dimensions in mm, scaled to fit within 25x25x25 units
+// Snowman OpenSCAD Model
+// A complete snowman with three stacked spheres, hat, arms, face features, and buttons
+// All parts are unioned into a single connected object
+// Sized to fit within 25x25x25 units, centered on origin, base at Z=0
 
-// Parameters
-overall_scale = 0.22;
-mouse_length = 120;
-mouse_width = 70;
-mouse_height = 42;
-button_gap = 1.5;
-button_depth = 0.8;
-side_button_count = 2;
-wall_thickness = 2;
-scroll_wheel_diameter = 8;
-scroll_wheel_width = 6;
+// ===== PARAMETERS =====
+// Overall scale factor
+overall_scale = 1.0;
 
-// Scaled dimensions
-s_length = mouse_length * overall_scale;
-s_width = mouse_width * overall_scale;
-s_height = mouse_height * overall_scale;
+// Sphere radii (scaled)
+bottom_radius = 5.5 * overall_scale;
+middle_radius = 4.0 * overall_scale;
+head_radius = 3.0 * overall_scale;
 
-$fn = 40;
+// Facet count for smoothness
+$fn = 60;
 
-module ergonomic_shell() {
-    difference() {
-        union() {
-            hull() {
-                translate([s_length*0.1, 0, 0])
-                    scale([1, 1, 0.6])
-                    resize([s_length*0.8, s_width*0.9, s_height*0.8])
-                    sphere(d=s_width*0.5);
-                
-                translate([s_length*0.3, 0, 0])
-                    scale([1.2, 1, 0.5])
-                    resize([s_length*0.6, s_width*0.95, s_height*0.9])
-                    sphere(d=s_width*0.6);
-                
-                translate([s_length*0.6, 0, 0])
-                    scale([0.8, 0.95, 0.4])
-                    resize([s_length*0.4, s_width*0.85, s_height*0.7])
-                    sphere(d=s_width*0.5);
-            }
-            
-            hull() {
-                translate([0, -s_width*0.2, s_height*0.1])
-                    scale([1.5, 1, 0.8])
-                    sphere(d=s_width*0.25);
-                translate([s_length*0.25, -s_width*0.25, s_height*0.15])
-                    scale([1.2, 1, 0.7])
-                    sphere(d=s_width*0.3);
-            }
-        }
-        
-        translate([0, 0, -s_height*0.1])
-            cube([s_length*2, s_width*2, s_height*0.2], center=true);
-    }
-}
+// Feature sizes
+eye_radius = 0.15 * overall_scale;
+nose_length = 1.2 * overall_scale;
+nose_base_radius = 0.3 * overall_scale;
+button_radius = 0.2 * overall_scale;
+arm_length = 4.5 * overall_scale;
+arm_radius = 0.15 * overall_scale;
 
-module left_button() {
-    translate([s_length*0.25, -button_gap/2-s_width*0.15, s_height*0.75]) {
-        difference() {
-            hull() {
-                translate([0, 0, 0])
-                    scale([1.8, 1, 0.3])
-                    sphere(d=s_width*0.25);
-                translate([s_length*0.15, 0, -button_depth*0.3])
-                    scale([1.5, 1, 0.25])
-                    sphere(d=s_width*0.24);
-            }
-            translate([0, 0, -s_height])
-                cube([s_length, s_width, s_height*2], center=true);
-        }
-    }
-}
+// Hat dimensions
+hat_brim_radius = 3.8 * overall_scale;
+hat_brim_height = 0.4 * overall_scale;
+hat_top_radius = 2.2 * overall_scale;
+hat_top_height = 3.0 * overall_scale;
 
-module right_button() {
-    translate([s_length*0.25, button_gap/2+s_width*0.15, s_height*0.75]) {
-        difference() {
-            hull() {
-                translate([0, 0, 0])
-                    scale([1.8, 1, 0.3])
-                    sphere(d=s_width*0.25);
-                translate([s_length*0.15, 0, -button_depth*0.3])
-                    scale([1.5, 1, 0.25])
-                    sphere(d=s_width*0.24);
-            }
-            translate([0, 0, -s_height])
-                cube([s_length, s_width, s_height*2], center=true);
-        }
-    }
-}
+// Mouth sphere parameters
+mouth_sphere_radius = 0.12 * overall_scale;
 
-module scroll_wheel() {
-    translate([s_length*0.35, 0, s_height*0.82]) {
-        difference() {
-            rotate([90, 0, 0])
-                cylinder(d=scroll_wheel_diameter*overall_scale, h=scroll_wheel_width*overall_scale, center=true);
-            for(i = [-5:5]) {
-                translate([0, i*scroll_wheel_width*overall_scale*0.15, 0])
-                    rotate([90, 0, 0])
-                    cylinder(d=scroll_wheel_diameter*overall_scale*1.1, h=scroll_wheel_width*overall_scale*0.05, center=true);
-            }
-        }
-    }
-}
-
-module side_buttons() {
-    for(i = [0:side_button_count-1]) {
-        translate([s_length*0.45, -s_width*0.35, s_height*0.35 - i*s_height*0.15]) {
-            hull() {
-                sphere(d=s_width*0.08);
-                translate([s_length*0.08, 0, 0])
-                    sphere(d=s_width*0.07);
-            }
-        }
-    }
-}
-
-module sensor_area() {
-    translate([s_length*0.5, 0, 0.1]) {
-        cylinder(d=s_width*0.15, h=1, center=true);
-        translate([0, 0, -0.5])
-            cylinder(d1=s_width*0.18, d2=s_width*0.15, h=0.5);
-    }
-}
-
-module base_plate() {
-    translate([s_length*0.35, 0, 0.3]) {
-        difference() {
-            hull() {
-                translate([s_length*0.15, 0, 0])
-                    scale([1.2, 1, 0.2])
-                    sphere(d=s_width*0.5);
-                translate([-s_length*0.15, 0, 0])
-                    scale([1, 0.9, 0.2])
-                    sphere(d=s_width*0.45);
-            }
-            sensor_area();
-        }
+// ===== MAIN ASSEMBLY =====
+union() {
+    // Bottom sphere (slightly flattened at base)
+    translate([0, 0, bottom_radius * 0.95])
+        sphere(r = bottom_radius);
+    
+    // Middle sphere (positioned on top of bottom)
+    translate([0, 0, bottom_radius * 1.9 + middle_radius * 0.85])
+        sphere(r = middle_radius);
+    
+    // Head sphere (positioned on top of middle)
+    translate([0, 0, bottom_radius * 1.9 + middle_radius * 1.7 + head_radius * 0.9])
+        sphere(r = head_radius);
+    
+    // === FACE FEATURES ===
+    // Left eye (coal - black sphere embedded in head)
+    translate([-0.8 * overall_scale, head_radius * 0.85, bottom_radius * 1.9 + middle_radius * 1.7 + head_radius * 1.3])
+        sphere(r = eye_radius);
+    
+    // Right eye
+    translate([0.8 * overall_scale, head_radius * 0.85, bottom_radius * 1.9 + middle_radius * 1.7 + head_radius * 1.3])
+        sphere(r = eye_radius);
+    
+    // Carrot nose (cone pointing forward)
+    translate([0, head_radius * 0.9, bottom_radius * 1.9 + middle_radius * 1.7 + head_radius * 0.95])
+        rotate([90, 0, 0])
+            cylinder(h = nose_length, r1 = nose_base_radius, r2 = 0.05 * overall_scale);
+    
+    // Mouth (5 small spheres in an arc)
+    for (i = [-2:2]) {
+        translate([i * 0.35 * overall_scale, 
+                   head_radius * 0.85, 
+                   bottom_radius * 1.9 + middle_radius * 1.7 + head_radius * 0.5 - abs(i) * 0.1 * overall_scale])
+            sphere(r = mouth_sphere_radius);
     }
     
-    for(x = [0.2, 0.5, 0.8]) {
-        for(y = [-0.25, 0.25]) {
-            translate([s_length*x, s_width*y, 0.4])
-                cylinder(d=s_width*0.04, h=0.8);
-        }
-    }
+    // === BUTTONS (on middle sphere) ===
+    // Top button
+    translate([0, middle_radius * 0.95, bottom_radius * 1.9 + middle_radius * 1.3])
+        sphere(r = button_radius);
+    
+    // Middle button
+    translate([0, middle_radius * 0.95, bottom_radius * 1.9 + middle_radius * 0.85])
+        sphere(r = button_radius);
+    
+    // Bottom button
+    translate([0, middle_radius * 0.95, bottom_radius * 1.9 + middle_radius * 0.4])
+        sphere(r = button_radius);
+    
+    // === ARMS (stick arms) ===
+    // Left arm
+    translate([-middle_radius * 0.7, 0, bottom_radius * 1.9 + middle_radius * 1.0])
+        rotate([0, -25, -15])
+            cylinder(h = arm_length, r = arm_radius);
+    
+    // Right arm
+    translate([middle_radius * 0.7, 0, bottom_radius * 1.9 + middle_radius * 1.0])
+        rotate([0, 25, 15])
+            cylinder(h = arm_length, r = arm_radius);
+    
+    // === HAT (top hat style) ===
+    // Hat brim (wide flat cylinder)
+    translate([0, 0, bottom_radius * 1.9 + middle_radius * 1.7 + head_radius * 1.8])
+        cylinder(h = hat_brim_height, r = hat_brim_radius);
+    
+    // Hat top (tall cylinder)
+    translate([0, 0, bottom_radius * 1.9 + middle_radius * 1.7 + head_radius * 1.8 + hat_brim_height])
+        cylinder(h = hat_top_height, r = hat_top_radius);
+    
+    // Hat connector (ensures connection between brim and top)
+    translate([0, 0, bottom_radius * 1.9 + middle_radius * 1.7 + head_radius * 1.8])
+        cylinder(h = hat_brim_height + 0.2, r = hat_top_radius);
 }
-
-module cable_channel() {
-    translate([0, 0, s_height*0.15]) {
-        rotate([0, 90, 0])
-            hull() {
-                cylinder(d=s_height*0.15, h=s_length*0.05);
-                translate([0, 0, s_length*0.05])
-                    sphere(d=s_height*0.15);
-            }
-    }
-}
-
-module grip_texture() {
-    for(i = [0:8]) {
-        translate([s_length*0.5 + i*s_length*0.04, -s_width*0.38, s_height*0.25]) {
-            rotate([0, -15, 0])
-                scale([0.8, 1, 2])
-                sphere(d=s_width*0.03);
-        }
-    }
-}
-
-module complete_mouse() {
-    union() {
-        difference() {
-            ergonomic_shell();
-            translate([s_length*0.35 - button_gap/2, 0, s_height*0.75])
-                cube([button_gap, s_width*0.5, s_height*0.3], center=true);
-        }
-        left_button();
-        right_button();
-        scroll_wheel();
-        side_buttons();
-        base_plate();
-        grip_texture();
-    }
-}
-
-complete_mouse();
 ```
