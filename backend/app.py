@@ -88,19 +88,25 @@ def _strip_markdown_fences(code: str) -> str:
     Handles various formats:
     - ```openscad ... ```
     - ```scad ... ```
+    - ```plaintext ... ```
     - ``` ... ```
     - With or without whitespace
     """
     code = code.strip()
     
-    # Remove opening fence: ```openscad, ```scad, or just ```
+    # Split into lines for robust fence detection
     lines = code.split('\n')
-    if lines and lines[0].strip().startswith('```'):
-        lines = lines[1:]
     
-    # Remove closing fence: ```
+    # Remove opening fence: Check first line for any fence format
+    if lines and lines[0].strip().startswith('```'):
+        fence_type = lines[0].strip()
+        lines = lines[1:]
+        print(f"[_strip_markdown_fences] Stripped opening fence: {fence_type}")
+    
+    # Remove closing fence: Check last line
     if lines and lines[-1].strip() == '```':
         lines = lines[:-1]
+        print(f"[_strip_markdown_fences] Stripped closing fence")
     
     result = '\n'.join(lines).strip()
     return result
@@ -438,7 +444,7 @@ def generate_model_summary():
         # Build prompt for summary generation
         prompt = f"""Based on the following OpenSCAD code, generate ONE SHORT sentence (max 15 words) describing what 3D model was created. 
 Be specific about the shape, dimensions if obvious, and any notable features. Do not mention OpenSCAD or technical details.
-Keep it natural and conversational.
+Keep it natural and conversational. Describe the shape for a little bit and start with, I have created/ I have modeled this object...
 
 {f"User requested: {user_prompt}" if user_prompt else ""}
 

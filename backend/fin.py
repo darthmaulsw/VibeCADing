@@ -21,8 +21,39 @@ def gen_cad(p):
     code_blocks = [block.text for block in content if hasattr(block, "text")]
     full_text = "\n".join(code_blocks)
     
+    # Strip markdown fences before writing
+    full_text = _strip_markdown_fences(full_text)
+    
     with open('output.scad', 'w', encoding='utf-8') as f:
         f.write(full_text)
+
+def _strip_markdown_fences(code: str) -> str:
+    """
+    Remove markdown code fences from SCAD code.
+    Handles various formats:
+    - ```openscad ... ```
+    - ```scad ... ```
+    - ```plaintext ... ```
+    - ``` ... ```
+    - With or without whitespace
+    """
+    code = code.strip()
+    
+    # Split into lines for robust fence detection
+    lines = code.split('\n')
+    
+    # Remove opening fence: Check first line for any fence format
+    if lines and lines[0].strip().startswith('```'):
+        lines = lines[1:]
+        print(f"[gen_cad] Stripped opening markdown fence")
+    
+    # Remove closing fence: Check last line
+    if lines and lines[-1].strip() == '```':
+        lines = lines[:-1]
+        print(f"[gen_cad] Stripped closing markdown fence")
+    
+    result = '\n'.join(lines).strip()
+    return result
 
 async def get_cad(user_prompt):
     client = Dedalus()
