@@ -45,6 +45,7 @@ def editprompt(p: str, fix: str) -> str:
         Here is the original openScad code {p} that was generated based on the user's first request.
         
         I WANT YOU TO UNDERSTAND THE OLD CODE FULLY, MAKE CHANGES ONLY TO WHAT THE USER HAS REQUESTED
+        USE SONAR TO HELP YOU UNDERSTAND THE OPENSCAD CODE IF NEEDED.
 
 		Based on this feedback, help me write a new and improved role-based prompt to generate an updated OpenSCAD code that addresses the user's concerns. 
 
