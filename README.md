@@ -1,8 +1,22 @@
-# VibeCADing
+# Suzanne
+
+![Suzanne](./assets/mainlogopic.png)
+
+![Python](https://img.shields.io/badge/-Python-3776AB?style=flat-square&logo=python&logoColor=white)
+![React](https://img.shields.io/badge/-React-61DAFB?style=flat-square&logo=react&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=fff&style=flat-square)
+![Flask](https://img.shields.io/badge/-Flask-000000?style=flat-square&logo=flask&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-339933?logo=nodedotjs&logoColor=fff&style=flat-square)
+![Three.js](https://img.shields.io/badge/Three.js-000000?logo=threedotjs&logoColor=fff&style=flat-square)
+![Vite](https://img.shields.io/badge/Vite-646CFF?logo=vite&logoColor=fff&style=flat-square)
+![Supabase](https://img.shields.io/badge/Supabase-3FCF8E?logo=supabase&logoColor=fff&style=flat-square)
+![Anthropic](https://img.shields.io/badge/Anthropic-191919?logo=anthropic&logoColor=fff&style=flat-square)
+![OpenAI](https://img.shields.io/badge/OpenAI-412991?logo=openai&logoColor=fff&style=flat-square)
+![Express](https://img.shields.io/badge/Express-000000?logo=express&logoColor=fff&style=flat-square)
 
 Voice-driven 3D CAD model generation. Speak your ideas and see them rendered in 3D.
 
-VibeCADing is a full-stack application that combines speech recognition, AI-powered CAD code generation, and real-time 3D visualization. Users describe 3D objects using voice input, and the system generates OpenSCAD code, converts it to STL files, and displays interactive 3D models.
+Suzanne is a full-stack application that combines speech recognition, AI-powered CAD code generation, and real-time 3D visualization. Users describe 3D objects using voice input, and the system generates OpenSCAD code, converts it to STL files, and displays interactive 3D models.
 
 ---
 
@@ -14,6 +28,14 @@ VibeCADing is a full-stack application that combines speech recognition, AI-powe
 - 3D Visualization - Real-time rendering with Three.js
 - Model Management - Save, load, and organize generated models via Supabase
 - Audio Feedback - Text-to-speech status updates and summaries
+
+---
+
+## Demo
+
+https://github.com/user-attachments/assets/Demo%20video%20-%20Suzanne.mp4
+
+*Demo video*
 
 ---
 
@@ -89,6 +111,10 @@ The Flask server acts as the central orchestrator that handles the voice-to-mode
                                       ↓
    OpenSCAD Code → Markdown Fence Removal → output.scad
    ```
+   
+   ![Agentic Workflow](./assets/agenetic.png)
+   
+   *Agentic view*
 
 3. **Async Job Management**
    - Generation runs in background thread
@@ -136,6 +162,10 @@ The Flask server acts as the central orchestrator that handles the voice-to-mode
 ### Node.js Converter (`backend/nodeserv/server.js`)
 
 A dedicated microservice for OpenSCAD to STL conversion using WASM.
+
+![Image Processing](./assets/imageprocessing.png)
+
+*Image to model view*
 
 #### Design Rationale
 
@@ -303,6 +333,10 @@ VibeCADing/
 
 ### Main Components
 
+![Main Screen](./assets/mainscreen.png)
+
+*Main menu after login*
+
 #### `App.tsx`
 - Screen management (landing → editor → library)
 - User authentication state
@@ -321,6 +355,10 @@ VibeCADing/
 - STL/GLB model loading
 - Event-driven model updates (`vibecad:load-glb`)
 - OrbitControls for viewport interaction
+
+![Color Editor](./assets/coloreditor.png)
+
+*Color customization options*
 
 ### Data Flow
 
@@ -347,6 +385,10 @@ User clicks record → WebM chunks → Blob → FormData
                                               ↓
                 Summary TTS plays automatically
 ```
+
+![Option Selector](./assets/optionselector.png)
+
+*Select editing feature*
 
 ---
 
