@@ -39,7 +39,7 @@ export function LandingScreen({ onSelectMode }: LandingScreenProps) {
 
     const fullWelcome = userId && storedUsername
       ? `Welcome back, ${storedUsername}`
-      : 'Welcome to 3D Modeling System';
+      : 'Welcome to Suzanne';
 
     let currentIndex = 0;
     const typeWelcome = () => {
