@@ -848,7 +848,7 @@ export function PhotoCapture({ onPhotoCapture, onBack }: PhotoCaptureProps) {
             </div>
 
             {/* Right Panel - Quality, Name, Generate, Status */}
-            <div className="col-span-3 flex flex-col gap-4">
+            <div className="col-span-3 flex flex-col items-end gap-4">
               <div className="font-mono text-xs p-4" style={{ background: 'rgba(0, 212, 255, 0.05)', border: '1px solid #00D4FF40', color: '#00D4FF' }}>
                 <div className="mb-2 font-semibold">QUALITY</div>
                 <div className="flex flex-col gap-2">
