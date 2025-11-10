@@ -223,7 +223,7 @@ def _status_update(text: str):
         if elevenlabs and status_text:
             audio_obj = elevenlabs.text_to_speech.convert(
                 text=status_text,
-                voice_id="IKne3meq5aSn9XLyUdCD",
+                voice_id="EXAVITQu4vr4xnSDxMaL",
                 model_id="eleven_multilingual_v2",
                 output_format="mp3_44100_128",
             )
@@ -409,7 +409,7 @@ def get_response():
     try:
         audio = elevenlabs.text_to_speech.convert(
             text=text_out,
-            voice_id="IKne3meq5aSn9XLyUdCD",
+            voice_id="EXAVITQu4vr4xnSDxMaL",
             model_id="eleven_multilingual_v2",
             output_format="mp3_44100_128",
         )
@@ -492,7 +492,7 @@ Generate a brief description:"""
         try:
             audio = elevenlabs.text_to_speech.convert(
                 text=summary,
-                voice_id="IKne3meq5aSn9XLyUdCD",
+                voice_id="EXAVITQu4vr4xnSDxMaL",
                 model_id="eleven_multilingual_v2",
                 output_format="mp3_44100_128",
             )

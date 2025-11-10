@@ -43,3 +43,5 @@ package-lock.json
 
 # Ignore this file to prevent merge conflicts
 .gitignore
+*.stl
+*.scad
