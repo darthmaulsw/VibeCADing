@@ -33,7 +33,7 @@ Suzanne is a full-stack application that combines speech recognition, AI-powered
 
 ## Demo
 
-[![Demo Video](https://img.shields.io/badge/▶-Watch%20Demo%20Video-red?style=for-the-badge)](https://github.com/darthmaulsw/VibeCADing/blob/main/assets/Demo%20video%20-%20Suzanne.mp4)
+[![Demo Video](https://img.shields.io/badge/▶-Watch%20Demo%20Video-red?style=for-the-badge)]([https://github.com/darthmaulsw/VibeCADing/blob/main/assets/Demo%20video%20-%20Suzanne.mp4](https://www.youtube.com/watch?v=S_DjLPOaHXw))
 
 *Demo Video*
 
