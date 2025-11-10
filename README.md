@@ -299,7 +299,7 @@ server: {
 ## Project Structure
 
 ```
-VibeCADing/
+Suzanne/
 ├── backend/
 │   ├── app.py                    # Flask server (main orchestrator)
 │   ├── fin.py                    # New model generation (get_cad)
