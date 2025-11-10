@@ -33,9 +33,11 @@ Suzanne is a full-stack application that combines speech recognition, AI-powered
 
 ## Demo
 
-https://github.com/user-attachments/assets/Demo%20video%20-%20Suzanne.mp4
 
-*Demo video*
+
+<video src="./assets/Demo video - Suzanne.mp4" controls title="Suzanne Demo"></video>
+
+*Demo Video*
 
 ---
 
